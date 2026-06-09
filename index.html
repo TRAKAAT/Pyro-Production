@@ -343,6 +343,78 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <div id="history-list"></div>
 </div>
 
+
+<!-- ════ ADMIN SCREEN ════ -->
+<div class="screen" id="screen-admin">
+  <div class="screen-header">
+    <div class="screen-title">Admin & Settings</div>
+    <div class="screen-sub">Server, supervisors, materials</div>
+  </div>
+
+  <!-- Server Config -->
+  <div class="section-label">Server Connection</div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <div style="font-size:14px;font-weight:600">Railway Server URL</div>
+      <span id="admin-server-status" style="font-size:11px;color:var(--red)">● Not set</span>
+    </div>
+    <input class="form-input" id="admin-server-url" placeholder="https://your-app.up.railway.app" style="margin-bottom:10px">
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-amber btn-sm" style="flex:1" onclick="adminSaveServerUrl()">Save URL</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="adminTestConnection()">Test Connection</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="pullFromServer().then(()=>{renderHome();alert('✅ Data pulled from server')}).catch(e=>alert('Failed: '+e.message))">⬇ Pull from Server</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="syncToServer().then?syncToServer():syncToServer();alert('✅ Pushed to server')">⬆ Push to Server</button>
+    </div>
+  </div>
+
+  <!-- Supervisors -->
+  <div class="section-label">Shift Supervisors</div>
+  <div class="card">
+    <div id="admin-supervisors-list" style="margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <input class="form-input" id="admin-new-supervisor" placeholder="Supervisor name..." style="flex:1">
+      <button class="btn btn-amber btn-sm" style="width:auto;padding:8px 14px" onclick="adminAddSupervisor()">Add</button>
+    </div>
+  </div>
+
+  <!-- Feed Materials -->
+  <div class="section-label">Feed Materials</div>
+  <div class="card">
+    <div id="admin-materials-list" style="margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px">
+      <input class="form-input" id="admin-new-material" placeholder="e.g. Passenger Tyres..." style="flex:1">
+      <button class="btn btn-amber btn-sm" style="width:auto;padding:8px 14px" onclick="adminAddMaterial()">Add</button>
+    </div>
+  </div>
+
+  <!-- Reactors -->
+  <div class="section-label">Reactor Names</div>
+  <div class="card">
+    <div class="form-group">
+      <label class="form-label">Reactor 1 Name</label>
+      <input class="form-input" id="admin-r1-name" placeholder="e.g. Reactor 1">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Reactor 2 Name</label>
+      <input class="form-input" id="admin-r2-name" placeholder="e.g. Reactor 2">
+    </div>
+    <button class="btn btn-amber" onclick="adminSaveReactorNames()">Save Names</button>
+  </div>
+
+  <!-- Danger zone -->
+  <div class="section-label">Data</div>
+  <div class="card">
+    <div style="color:var(--muted);font-size:13px;margin-bottom:12px">Export all data or clear local storage</div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost btn-sm" style="flex:1" onclick="exportData()">📥 Export JSON</button>
+      <button class="btn btn-ghost btn-sm" style="flex:1" style="color:var(--red)" onclick="clearLocalData()">🗑 Clear Local</button>
+    </div>
+  </div>
+
+  <div style="height:20px"></div>
+</div>
 </div><!-- /app -->
 
 <!-- ── BOTTOM NAV ── -->
@@ -367,6 +439,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   <button class="nav-btn" id="nav-history" onclick="navigate('history')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="12 8 12 12 14 14"/><circle cx="12" cy="12" r="10"/></svg>
     History
+  </button>
+  <button class="nav-btn" id="nav-admin" onclick="navigate('admin')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+    Admin
   </button>
 </nav>
 
@@ -688,6 +764,7 @@ function navigate(screen){
   if(screen==='checks') renderChecklist();
   if(screen==='stats') renderStats();
   if(screen==='history') renderHistory();
+  if(screen==='admin') renderAdminScreen();
 }
 function goHome(){ navigate('home'); }
 
@@ -1543,6 +1620,152 @@ function showHeatDetail(id){
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
 document.querySelectorAll('.modal-overlay').forEach(m=>{ m.addEventListener('click',function(e){ if(e.target===this) closeModal(this.id); }); });
 
+
+// ═══════════════ ADMIN ═══════════════
+function renderAdminScreen(){
+  const url = getServerUrl();
+  const inp = document.getElementById('admin-server-url');
+  if(inp) inp.value = url;
+  const status = document.getElementById('admin-server-status');
+  if(status) status.innerHTML = url ? '<span style="color:var(--green)">● Connected: '+url.replace('https://','')+'</span>' : '<span style="color:var(--red)">● Not set</span>';
+
+  const s = getSettings();
+
+  // Supervisors list
+  const supEl = document.getElementById('admin-supervisors-list');
+  if(supEl){
+    if(!s.supervisors||!s.supervisors.length){ supEl.innerHTML='<div style="color:var(--muted);font-size:13px">No supervisors added</div>'; }
+    else { supEl.innerHTML = s.supervisors.map((n,i)=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:14px">${n}</span>
+        <button onclick="adminRemoveSupervisor(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;padding:0 4px">×</button>
+      </div>`).join(''); }
+  }
+
+  // Materials list
+  const matEl = document.getElementById('admin-materials-list');
+  if(matEl){
+    if(!s.feedMaterials||!s.feedMaterials.length){ matEl.innerHTML='<div style="color:var(--muted);font-size:13px">No materials added</div>'; }
+    else { matEl.innerHTML = s.feedMaterials.map((m,i)=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:14px">${m}</span>
+        <button onclick="adminRemoveMaterial(${i})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;padding:0 4px">×</button>
+      </div>`).join(''); }
+  }
+
+  // Reactor names
+  const r1 = document.getElementById('admin-r1-name');
+  const r2 = document.getElementById('admin-r2-name');
+  if(r1) r1.value = s.reactorNames?.[1]||'Reactor 1';
+  if(r2) r2.value = s.reactorNames?.[2]||'Reactor 2';
+
+  // Sync feed materials into heat material selects
+  syncMaterialSelects();
+}
+
+function adminSaveServerUrl(){
+  const url = document.getElementById('admin-server-url').value.trim().replace(/\/+$/,'');
+  setServerUrl(url);
+  renderAdminScreen();
+  if(url){ pullFromServer().then(()=>renderHome()).catch(()=>{}); }
+}
+
+async function adminTestConnection(){
+  const url = getServerUrl();
+  if(!url){ alert('No URL set'); return; }
+  try{
+    const res = await fetch(url+'/health');
+    const data = await res.json();
+    alert('✅ Connected! Server: '+data.service);
+  }catch(e){ alert('❌ Could not connect: '+e.message); }
+}
+
+function adminAddSupervisor(){
+  const inp = document.getElementById('admin-new-supervisor');
+  const name = inp.value.trim();
+  if(!name) return;
+  const s = getSettings();
+  if(!s.supervisors.includes(name)){ s.supervisors.push(name); localStorage.setItem('py_settings',JSON.stringify(s)); }
+  inp.value='';
+  renderAdminScreen();
+  syncToServer();
+}
+function adminRemoveSupervisor(i){
+  const s = getSettings();
+  s.supervisors.splice(i,1);
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  renderAdminScreen();
+  syncToServer();
+}
+
+function adminAddMaterial(){
+  const inp = document.getElementById('admin-new-material');
+  const name = inp.value.trim();
+  if(!name) return;
+  const s = getSettings();
+  if(!s.feedMaterials) s.feedMaterials=[];
+  if(!s.feedMaterials.includes(name)){ s.feedMaterials.push(name); localStorage.setItem('py_settings',JSON.stringify(s)); }
+  inp.value='';
+  renderAdminScreen();
+  syncMaterialSelects();
+  syncToServer();
+}
+function adminRemoveMaterial(i){
+  const s = getSettings();
+  s.feedMaterials.splice(i,1);
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  renderAdminScreen();
+  syncMaterialSelects();
+  syncToServer();
+}
+
+function adminSaveReactorNames(){
+  const s = getSettings();
+  if(!s.reactorNames) s.reactorNames={};
+  s.reactorNames[1] = document.getElementById('admin-r1-name').value.trim()||'Reactor 1';
+  s.reactorNames[2] = document.getElementById('admin-r2-name').value.trim()||'Reactor 2';
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  alert('✅ Saved');
+  syncToServer();
+}
+
+function syncMaterialSelects(){
+  const s = getSettings();
+  const mats = s.feedMaterials||['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres'];
+  ['heat-material-select','edit-heat-material'].forEach(id=>{
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = mats.map(m=>`<option value="${m}"${m===cur?' selected':''}>${m}</option>`).join('');
+  });
+}
+
+function populateSupervisors(){
+  const s = getSettings();
+  const sups = s.supervisors||[];
+  const sel = document.getElementById('shift-supervisor-select');
+  if(!sel) return;
+  sel.innerHTML='<option value="">— Select Supervisor —</option>';
+  sups.forEach(n=>{ const o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o); });
+}
+
+function exportData(){
+  const db = getDB();
+  const blob = new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'pyrolysis_data_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+}
+
+function clearLocalData(){
+  if(confirm('Clear ALL local data? This cannot be undone.\n\nServer data will not be affected.')){
+    localStorage.removeItem('py_db');
+    renderHome();
+    alert('Local data cleared');
+  }
+}
+
 // ═══════════════ INIT ═══════════════
 function init(){
   updateClock();
@@ -1631,7 +1854,7 @@ window.saveDB = function(db){
 };
 
 // ── SERVER SETTINGS UI (injected into home screen) ──
-function renderServerSettings(){
+function renderServerSettings_DISABLED(){
   const existing=document.getElementById('server-settings-card');
   if(existing) existing.remove();
   const url=getServerUrl();
