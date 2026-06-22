@@ -290,12 +290,20 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div id="yield-display"></div>
   </div>
 
+  <!-- Temperature Graph -->
+  <div class="card" id="temp-graph-card" style="display:none">
+    <div class="card-title">🌡 Temperature History</div>
+    <div id="temp-graph-container" style="overflow-x:auto;padding-bottom:4px;"></div>
+  </div>
+
   <!-- WhatsApp share -->
   <div id="wa-card" style="display:none">
-    <div class="section-label">WhatsApp Update</div>
+    <div class="section-label">WhatsApp Hourly Update</div>
     <div id="wa-preview"></div>
+    <div id="wa-photo-row" style="display:flex;gap:6px;flex-wrap:wrap;padding:0 16px 8px;"></div>
     <div style="padding:0 16px 8px;display:flex;gap:8px">
-      <button class="btn btn-ghost" style="flex:1" onclick="copyWAMessage()">📋 Copy Message</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="copyWAMessage()">📋 Copy Text</button>
+      <button class="btn btn-amber" style="flex:1" onclick="shareWAMessage()">📤 Share</button>
     </div>
   </div>
 
@@ -369,13 +377,38 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
   </div>
 
-  <!-- Supervisors -->
-  <div class="section-label">Shift Supervisors</div>
+  <!-- Positions -->
+  <div class="section-label">Positions / Roles</div>
   <div class="card">
-    <div id="admin-supervisors-list" style="margin-bottom:10px"></div>
+    <div id="admin-positions-list" style="margin-bottom:10px"></div>
     <div style="display:flex;gap:8px">
-      <input class="form-input" id="admin-new-supervisor" placeholder="Supervisor name..." style="flex:1">
-      <button class="btn btn-amber btn-sm" style="width:auto;padding:8px 14px" onclick="adminAddSupervisor()">Add</button>
+      <input class="form-input" id="admin-new-position" placeholder="e.g. Plant Manager, Shift Supervisor..." style="flex:1">
+      <button class="btn btn-amber btn-sm" style="width:auto;padding:8px 14px" onclick="adminAddPosition()">Add</button>
+    </div>
+  </div>
+
+  <!-- People -->
+  <div class="section-label">People</div>
+  <div class="card">
+    <div id="admin-people-list" style="margin-bottom:10px"></div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Add a person, assign their role, and optionally capture their signature.</div>
+    <div style="display:flex;gap:8px;margin-bottom:6px;">
+      <input class="form-input" id="admin-new-person-name" placeholder="Full name..." style="flex:1">
+      <select class="form-select" id="admin-new-person-role" style="flex:1"></select>
+    </div>
+    <button class="btn btn-amber" onclick="adminAddPerson()" style="width:100%">Add Person</button>
+  </div>
+
+  <!-- Signature Modal (inline) -->
+  <div id="admin-sig-panel" style="display:none;">
+    <div class="section-label">Signature — <span id="admin-sig-name"></span></div>
+    <div class="card">
+      <canvas id="admin-sig-canvas" width="320" height="140" style="background:var(--surface2);border-radius:8px;touch-action:none;display:block;width:100%;"></canvas>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="clearSignature()">Clear</button>
+        <button class="btn btn-amber btn-sm" style="flex:1" onclick="saveSignature()">Save Signature</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="cancelSignature()">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -454,21 +487,22 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="modal-handle"></div>
     <div class="modal-title">Start Shift</div>
     <div class="form-group">
-      <label class="form-label">Shift Supervisor</label>
-      <select class="form-select" id="shift-supervisor-select">
-        <option value="">— Select Supervisor —</option>
-      </select>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Or Enter Name</label>
-      <input class="form-input" id="shift-supervisor-input" placeholder="Supervisor name..." type="text">
-    </div>
-    <div class="form-group">
       <label class="form-label">Shift Type</label>
       <select class="form-select" id="shift-type-select">
         <option value="day">Day Shift</option>
         <option value="night">Night Shift</option>
       </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Crew Members</label>
+      <div id="shift-crew-list" style="margin-bottom:8px;display:flex;flex-wrap:wrap;gap:6px;min-height:32px;"></div>
+      <div style="display:flex;gap:8px;">
+        <select class="form-select" id="shift-crew-select" style="flex:1">
+          <option value="">— Add person —</option>
+        </select>
+        <button class="btn btn-amber btn-sm" style="width:auto;padding:8px 12px" onclick="addCrewMember()">Add</button>
+      </div>
+      <input class="form-input" id="shift-crew-input" placeholder="Or type a name..." type="text" style="margin-top:6px">
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-start-shift')">Cancel</button>
@@ -520,10 +554,6 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <option value="Other">Other</option>
       </select>
     </div>
-    <div class="form-group">
-      <label class="form-label">Load Weight (tons)</label>
-      <input class="form-input" id="heat-load-weight" type="number" placeholder="e.g. 16" inputmode="decimal" step="0.1">
-    </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-new-heat')">Cancel</button>
       <button class="btn btn-amber" onclick="startNewHeat()">Begin Loading</button>
@@ -566,6 +596,17 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     <div class="form-group">
       <label class="form-label">Notes</label>
       <textarea class="form-input" id="log-notes" placeholder="Any observations..."></textarea>
+    </div>
+    <div class="form-group">
+      <label class="form-label" style="margin-bottom:6px;">📸 Photos / Media</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
+        <button class="btn btn-ghost btn-sm" onclick="captureLogPhoto('temp')" style="flex-direction:column;height:56px;font-size:11px;">🌡<br>Temp Gauge</button>
+        <button class="btn btn-ghost btn-sm" onclick="captureLogPhoto('condenser')" style="flex-direction:column;height:56px;font-size:11px;">💧<br>Condenser</button>
+        <button class="btn btn-ghost btn-sm" onclick="captureLogPhoto('sightglass')" style="flex-direction:column;height:56px;font-size:11px;">🔵<br>Sight Glass</button>
+        <button class="btn btn-ghost btn-sm" onclick="captureLogPhoto('oil')" style="flex-direction:column;height:56px;font-size:11px;">🛢<br>Oil Level</button>
+      </div>
+      <div id="log-photo-thumbs" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+      <input type="file" id="log-photo-input" accept="image/*,video/*" capture="environment" style="display:none" onchange="handleLogPhoto(event)">
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-hourly-log')">Cancel</button>
@@ -620,11 +661,14 @@ textarea.form-input { min-height: 80px; resize: vertical; }
   </div>
 </div>
 
-<!-- Edit Heat Modal -->
-<div class="modal-overlay" id="modal-edit-heat">
-  <div class="modal-sheet">
+<!-- Edit Heat Modal — full screen -->
+<div class="modal-overlay" id="modal-edit-heat" style="align-items:stretch;">
+  <div class="modal-sheet" style="max-height:100vh;overflow-y:auto;border-radius:16px 16px 0 0;">
     <div class="modal-handle"></div>
-    <div class="modal-title">Edit Heat Info</div>
+    <div class="modal-title">Edit Heat</div>
+
+    <!-- Basic info -->
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Basic Info</div>
     <div class="form-group">
       <label class="form-label">Heat Number</label>
       <input class="form-input" id="edit-heat-number" type="text" inputmode="numeric">
@@ -643,9 +687,50 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <label class="form-label">Load Weight (tons)</label>
       <input class="form-input" id="edit-heat-weight" type="number" inputmode="decimal" step="0.1">
     </div>
-    <div style="display:flex;gap:8px;margin-top:8px">
+
+    <!-- Phase times -->
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px;">Phase Start / End Times</div>
+    <div id="edit-phase-times"></div>
+
+    <!-- Hourly logs -->
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px;">Hourly Logs</div>
+    <div id="edit-hourly-logs-list"></div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;" onclick="editAddHourlyLog()">+ Add Missed Log</button>
+    <div id="edit-add-log-form" style="display:none;margin-top:10px;background:var(--surface2);border-radius:10px;padding:12px;">
+      <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--amber);">Add Hourly Log</div>
+      <div class="form-group"><label class="form-label">Date & Time</label><input class="form-input" id="edit-log-time" type="datetime-local"></div>
+      <div class="form-group"><label class="form-label">Temperature (°C)</label><input class="form-input" id="edit-log-temp" type="number" inputmode="numeric"></div>
+      <div class="form-group"><label class="form-label">Oil Level (mm)</label><input class="form-input" id="edit-log-oil" type="number" inputmode="numeric"></div>
+      <div class="form-group"><label class="form-label">Notes</label><input class="form-input" id="edit-log-notes" type="text" placeholder="Optional notes..."></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById('edit-add-log-form').style.display='none'">Cancel</button>
+        <button class="btn btn-amber btn-sm" style="flex:1" onclick="editSaveNewLog()">Save Log</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-heat')">Cancel</button>
-      <button class="btn btn-amber" onclick="saveEditHeat()">Save Changes</button>
+      <button class="btn btn-amber" onclick="saveEditHeat()">Save All Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Phase Photo Modal -->
+<div class="modal-overlay" id="modal-phase-photo">
+  <div class="modal-sheet">
+    <div class="modal-handle"></div>
+    <div class="modal-title" id="phase-photo-title">Add Phase Photo</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:14px;" id="phase-photo-desc">Attach a photo to this phase update</div>
+    <div id="phase-photo-thumb" style="margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button class="btn btn-ghost" style="flex:1" onclick="triggerPhasePhoto()">📷 Take Photo</button>
+      <button class="btn btn-ghost" style="flex:1" onclick="triggerPhaseVideo()">🎬 Video</button>
+    </div>
+    <input type="file" id="phase-photo-input" accept="image/*" capture="environment" style="display:none" onchange="handlePhasePhoto(event)">
+    <input type="file" id="phase-video-input" accept="video/*" capture="environment" style="display:none" onchange="handlePhasePhoto(event)">
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost" onclick="closeModal('modal-phase-photo');confirmPhaseAndShare(false)">Skip — No Photo</button>
+      <button class="btn btn-amber" onclick="closeModal('modal-phase-photo');confirmPhaseAndShare(true)" id="phase-photo-share-btn">Share Update</button>
     </div>
   </div>
 </div>
@@ -731,7 +816,7 @@ const CHECKLIST_SECTIONS = [
 function genId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function getDB(){ try{ return JSON.parse(localStorage.getItem('py_db'))||{heats:[],shifts:[],checklists:[],hourlyLogs:[]}; }catch(e){ return {heats:[],shifts:[],checklists:[],hourlyLogs:[]}; } }
 function saveDB(db){ localStorage.setItem('py_db',JSON.stringify(db)); }
-function getSettings(){ try{ return JSON.parse(localStorage.getItem('py_settings'))||{supervisors:['Bongisani','Nkosingipiwe','Phillip','Eric','Lhine','Kganu','Luckman','Kleiman'],feedMaterials:['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres']}; }catch(e){ return {supervisors:[],feedMaterials:[]}; } }
+function getSettings(){ try{ const s=JSON.parse(localStorage.getItem('py_settings'))||{}; if(!s.supervisors) s.supervisors=['Bongisani','Nkosingipiwe','Phillip','Eric','Lhine','Kganu','Luckman','Kleiman']; if(!s.feedMaterials) s.feedMaterials=['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres']; if(!s.positions) s.positions=['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance']; if(!s.people) s.people=[]; return s; }catch(e){ return {supervisors:[],feedMaterials:[],positions:['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance'],people:[]}; } }
 
 // ── STATE ──
 let currentReactor = 1;
@@ -982,7 +1067,7 @@ function renderReactorDetail(r){
       <div style="font-size:52px;font-weight:800;font-family:var(--mono);color:${color};line-height:1.1">${fmtDuration(elapsed)}</div>
       <div style="font-size:13px;color:var(--muted);margin-top:4px">Started ${fmtTime(heat.phases[phase].startTime)}</div>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:center">
-        <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px" onclick="openEditHeatModal()">✏️ Edit Heat</button>
+        <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px" onclick="openEditHeatModal(getActiveHeat(currentReactor)&&getActiveHeat(currentReactor).id)">✏️ Edit Heat</button>
         ${phase==='reaction'?`<button class="btn btn-ghost-amber btn-sm" style="width:auto;padding:6px 14px" onclick="openHourlyLogModal()">📊 Hourly Log</button>`:''}
       </div>`;
   } else {
@@ -1051,6 +1136,8 @@ function renderPhaseTimeline(heat){
 }
 
 function renderHourlyLogsList(logs){
+  // Also update temperature graph
+  renderTempGraph(logs);
   const el = document.getElementById('hourly-logs-list');
   if(!logs.length){ el.innerHTML='<div style="color:var(--muted);font-size:13px">No logs yet</div>'; return; }
   el.innerHTML = [...logs].reverse().map(l=>`
@@ -1076,19 +1163,35 @@ function renderYieldCard(heat){
     <div class="card-row"><span class="card-row-label">Heavy Steel</span><span class="card-row-value">${y.steelKg||0} kg</span></div>`;
 }
 
+function getProductionHours(heat){
+  // Hours since reaction started (or loading started if reaction not started yet)
+  var startPhase = heat.phases.reaction || heat.phases.loading;
+  if(!startPhase || !startPhase.startTime) return null;
+  var ms = Date.now() - new Date(startPhase.startTime).getTime();
+  return Math.round(ms/3600000);
+}
+function getCooldownHours(heat){
+  if(!heat.phases.cooldown || !heat.phases.cooldown.startTime) return null;
+  var end = heat.phases.cooldown.endTime ? new Date(heat.phases.cooldown.endTime) : new Date();
+  var ms = end - new Date(heat.phases.cooldown.startTime);
+  return Math.round(ms/3600000);
+}
 function renderWAPreview(heat, lastLog){
-  const lines = [
-    `*GeT Energy — Pyrolysis Update*`,
-    `━━━━━━━━━━━━━━━━━`,
-    `🏭 *Reactor ${heat.reactor}* | Heat #${heat.heatNumber}`,
-    `⏱ Time: ${new Date(lastLog.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})}`,
-    `🌡 Temp: *${lastLog.temp}°C*`,
-    `🛢 Oil Level: ${lastLog.oilLevel||'—'} mm`,
-    `🔵 Oil Flowing: ${lastLog.oilFlowing?'Yes ✅':'No ❌'}`,
-    `💧 Condenser: ${lastLog.condenser==='ok'?'OK ✅':'Low ⚠️'}`,
-    `📦 Material: ${heat.material}`,
-    lastLog.notes?`📝 Notes: ${lastLog.notes}`:'',
-    `━━━━━━━━━━━━━━━━━`,
+  var prodHrs = getProductionHours(heat);
+  var coolHrs = getCooldownHours(heat);
+  var isInCooldown = heat.status === 'cooldown';
+  var timeStr = new Date(lastLog.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+  var lines = [
+    'Reactor '+heat.reactor,
+    'Heat 🔥 '+heat.heatNumber,
+    'Time '+timeStr,
+    prodHrs !== null ? 'Production time: '+prodHrs+'hours' : '',
+    'Reactor temp: '+lastLog.temp+'°C',
+    isInCooldown && coolHrs !== null ? 'Cooldown time: '+coolHrs+'hours' : '',
+    lastLog.oilLevel ? 'Oil level: '+lastLog.oilLevel+' mm' : '',
+    lastLog.oilFlowing !== null ? 'Oil flowing: '+(lastLog.oilFlowing ? 'Yes ✅' : 'No ❌') : '',
+    lastLog.condenser ? 'Condenser water: '+(lastLog.condenser==='ok'?'OK ✅':'Low ⚠️') : '',
+    lastLog.notes ? lastLog.notes : '',
   ].filter(Boolean).join('\n');
   document.getElementById('wa-preview').textContent = lines;
   window._waMessage = lines;
@@ -1138,6 +1241,9 @@ function promptAdvancePhase(phase, nextPhase){
   document.getElementById('advance-phase-title').textContent = titleMap[phase]||'Advance Phase';
 
   let body = '';
+  if(phase==='loading'){
+    body = '<div class="form-group"><label class="form-label">Final Load Weight (tons)</label><input class="form-input" id="advance-load-weight" type="number" placeholder="e.g. 17.2" inputmode="decimal" step="0.1" style="margin-top:4px"></div>';
+  }
   if(phase==='purging'){
     body = '<div style="color:var(--muted);font-size:14px;margin-bottom:12px">⚠️ Confirm pre-start checklist has been completed before proceeding to ignition.</div>';
     const db=getDB(); const heat=getActiveHeat(currentReactor);
@@ -1165,6 +1271,12 @@ function confirmAdvancePhase(){
 
   heat.phases[phase].endTime = new Date().toISOString();
 
+  // Capture load weight when loading ends
+  if(phase==='loading'){
+    const wtEl=document.getElementById('advance-load-weight');
+    if(wtEl&&wtEl.value) heat.loadWeight=parseFloat(wtEl.value)||null;
+  }
+
   if(nextPhase){
     heat.phases[nextPhase] = { startTime: new Date().toISOString(), endTime: null };
     heat.status = nextPhase;
@@ -1177,6 +1289,106 @@ function confirmAdvancePhase(){
   closeModal('modal-advance-phase');
 
   if(nextPhase==='deslag'){ openEndRunModal(); return; }
+  // Prompt for phase photo on significant transitions
+  var photoPhases = ['loading','purging','reaction','cooldown','openDoor'];
+  if(photoPhases.indexOf(phase) >= 0){
+    openPhasePhotoModal(phase, nextPhase, heat);
+    return;
+  }
+  renderReactorDetail(currentReactor);
+}
+
+// Phase photo state
+var _phasePhotoData = null;
+var _phasePhotoHeat = null;
+var _phasePhotoPhase = null;
+var _phasePhotoNext = null;
+
+function openPhasePhotoModal(phase, nextPhase, heat){
+  _phasePhotoHeat = heat;
+  _phasePhotoPhase = phase;
+  _phasePhotoNext = nextPhase;
+  _phasePhotoData = null;
+  document.getElementById('phase-photo-thumb').innerHTML = '';
+  var titles = {
+    loading: '📦 Loading Complete',
+    purging: '🔵 Purging Complete',
+    reaction: '🔥 Reaction Complete',
+    cooldown: '❄️ Cooldown Complete',
+    openDoor: '🚪 Door Open',
+  };
+  var descs = {
+    loading: 'Photo of loaded reactor before closing door',
+    purging: 'Photo showing burners are on / purge complete',
+    reaction: 'Photo of temperature gauge at end of reaction',
+    cooldown: 'Photo showing cooldown — temperature gauge',
+    openDoor: 'Photo of open door / start of de-slag',
+  };
+  document.getElementById('phase-photo-title').textContent = titles[phase] || 'Phase Update';
+  document.getElementById('phase-photo-desc').textContent = descs[phase] || 'Add a photo to this phase update';
+  document.getElementById('modal-phase-photo').classList.add('open');
+}
+
+function triggerPhasePhoto(){
+  document.getElementById('phase-photo-input').click();
+}
+function triggerPhaseVideo(){
+  document.getElementById('phase-video-input').click();
+}
+function handlePhasePhoto(event){
+  var file = event.target.files[0];
+  if(!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e){
+    _phasePhotoData = {dataUrl: e.target.result, isVideo: file.type.startsWith('video/')};
+    var thumb = document.getElementById('phase-photo-thumb');
+    if(_phasePhotoData.isVideo){
+      thumb.innerHTML = '<div style="width:100%;height:80px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:32px;">🎬</div>';
+    } else {
+      thumb.innerHTML = '<img src="'+e.target.result+'" style="width:100%;max-height:140px;object-fit:cover;border-radius:8px;">';
+    }
+    document.getElementById('phase-photo-share-btn').textContent = 'Share with Photo';
+    event.target.value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function phaseUpdateText(phase, heat){
+  var msgs = {
+    loading: 'Reactor '+heat.reactor+'\nHeat 🔥 '+heat.heatNumber+'\nLoading complete — closing door',
+    purging: 'Reactor '+heat.reactor+'\nHeat 🔥 '+heat.heatNumber+'\nDone purging nitrogen\nBurners are on',
+    reaction: 'Reactor '+heat.reactor+'\nHeat 🔥 '+heat.heatNumber+'\nReaction complete — starting cooldown',
+    cooldown: 'Reactor '+heat.reactor+'\nHeat 🔥 '+heat.heatNumber+'\nCooldown complete — opening door',
+    openDoor: 'Reactor '+heat.reactor+'\nHeat 🔥 '+heat.heatNumber+'\nDoor open — start de-slag',
+  };
+  return msgs[phase] || 'Reactor '+heat.reactor+' Heat 🔥 '+heat.heatNumber+' — phase complete';
+}
+
+function confirmPhaseAndShare(share){
+  if(share && _phasePhotoHeat){
+    var txt = phaseUpdateText(_phasePhotoPhase, _phasePhotoHeat);
+    window._waMessage = txt;
+    window._waPhasePhoto = _phasePhotoData;
+    // Update the WA card with phase message
+    var waPreview = document.getElementById('wa-preview');
+    if(waPreview) waPreview.textContent = txt;
+    var waCard = document.getElementById('wa-card');
+    if(waCard) waCard.style.display = '';
+    // Update photo row
+    var photoRow = document.getElementById('wa-photo-row');
+    if(photoRow && _phasePhotoData){
+      if(_phasePhotoData.isVideo){
+        photoRow.innerHTML = '<div style="width:60px;height:60px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;">🎬</div>';
+      } else {
+        photoRow.innerHTML = '<img src="'+_phasePhotoData.dataUrl+'" style="width:60px;height:60px;object-fit:cover;border-radius:8px;">';
+      }
+    }
+    // Auto-open WA
+    setTimeout(function(){
+      var encoded = encodeURIComponent(txt);
+      window.open('https://wa.me/?text='+encoded, '_blank');
+    }, 300);
+  }
   renderReactorDetail(currentReactor);
 }
 
@@ -1192,15 +1404,15 @@ function openNewHeatModal(r){
 function startNewHeat(){
   const num = document.getElementById('heat-number-input').value.trim();
   const mat = document.getElementById('heat-material-select').value;
-  const wt = document.getElementById('heat-load-weight').value;
   if(!num){ alert('Please enter a heat number'); return; }
   const db = getDB();
   const shift = getActiveShift();
   const now = new Date().toISOString();
   const heat = {
     id: genId(), heatNumber: num, reactor: currentReactor,
-    material: mat, loadWeight: parseFloat(wt)||null,
+    material: mat, loadWeight: null,
     shiftId: shift?shift.id:null, supervisor: shift?shift.supervisor:'Unknown',
+    crew: shift?shift.crew:[],
     status:'loading',
     phases:{ loading:{ startTime:now, endTime:null } },
     yields:null, notes:'',
@@ -1215,6 +1427,8 @@ function startNewHeat(){
 // ═══════════════ HOURLY LOG ═══════════════
 function openHourlyLogModal(){
   logOilFlowing=null; logCondenser=null;
+  _logPhotos=[];
+  document.getElementById('log-photo-thumbs').innerHTML='';
   document.getElementById('log-temp-slider').value=150;
   document.getElementById('log-temp-display').textContent='150';
   document.getElementById('log-temp-input').value='';
@@ -1260,6 +1474,7 @@ function submitHourlyLog(){
     id:genId(), heatId:heat.id, reactor:currentReactor, heatNumber:heat.heatNumber,
     timestamp:new Date().toISOString(), temp, oilLevel:parseFloat(oilLevel)||null,
     oilFlowing:logOilFlowing, condenser:logCondenser, notes,
+    photos:_logPhotos.map(function(p){return {type:p.type,dataUrl:p.dataUrl,isVideo:p.isVideo||false};}),
   };
   db.hourlyLogs.push(log);
   saveDB(db);
@@ -1318,42 +1533,169 @@ function submitEndRun(){
 }
 
 // ═══════════════ EDIT HEAT ═══════════════
-function openEditHeatModal(){
-  const heat=getActiveHeat(currentReactor);
-  if(!heat) return;
-  document.getElementById('edit-heat-number').value=heat.heatNumber;
-  document.getElementById('edit-heat-material').value=heat.material;
-  document.getElementById('edit-heat-weight').value=heat.loadWeight||'';
-  document.getElementById('modal-edit-heat').classList.add('open');
-}
 function saveEditHeat(){
-  const db=getDB();
-  const heat=getActiveHeat(currentReactor);
+  var db=getDB();
+  var heat=db.heats.find(function(h){return h.id===editHeatId;});
+  if(!heat){ var ah=getActiveHeat(currentReactor); if(ah) heat=db.heats.find(function(h){return h.id===ah.id;}); }
   if(!heat) return;
   heat.heatNumber=document.getElementById('edit-heat-number').value.trim()||heat.heatNumber;
   heat.material=document.getElementById('edit-heat-material').value;
   heat.loadWeight=parseFloat(document.getElementById('edit-heat-weight').value)||heat.loadWeight;
-  db.heats=db.heats.map(h=>h.id===heat.id?heat:h);
-  saveDB(db);
-  closeModal('modal-edit-heat');
-  renderReactorDetail(currentReactor);
+  // Save phase times
+  PHASES.forEach(function(p){
+    var startEl=document.getElementById('edit-phase-start-'+p);
+    var endEl=document.getElementById('edit-phase-end-'+p);
+    if(startEl && startEl.value){ if(!heat.phases[p]) heat.phases[p]={}; heat.phases[p].startTime=new Date(startEl.value).toISOString(); }
+    if(endEl && endEl.value){ if(!heat.phases[p]) heat.phases[p]={}; heat.phases[p].endTime=new Date(endEl.value).toISOString(); }
+  });
+  db.heats=db.heats.map(function(h){return h.id===heat.id?heat:h;});
+  saveDB(db); syncToServer(); closeModal('modal-edit-heat'); renderReactorDetail(currentReactor);
 }
+
+var _editHeatForLogs=null;
+
+function openEditHeatModal(heatId){
+  editHeatId=heatId;
+  var db=getDB();
+  var heat=db.heats.find(function(h){return h.id===heatId;});
+  if(!heat) return;
+  _editHeatForLogs=heat;
+  document.getElementById('edit-heat-number').value=heat.heatNumber||'';
+  document.getElementById('edit-heat-material').value=heat.material||'Passenger Tyres';
+  document.getElementById('edit-heat-weight').value=heat.loadWeight||'';
+  var phaseTimes=document.getElementById('edit-phase-times'); phaseTimes.innerHTML='';
+  PHASES.forEach(function(p){
+    if(!heat.phases[p]) return;
+    var ph=heat.phases[p];
+    var toLocalDT=function(iso){ if(!iso) return ''; var d=new Date(iso),off=d.getTimezoneOffset(),local=new Date(d.getTime()-off*60000); return local.toISOString().slice(0,16); };
+    var row=document.createElement('div'); row.style.cssText='margin-bottom:10px;padding:10px;background:var(--surface2);border-radius:8px;';
+    row.innerHTML='<div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:6px;">'+PHASE_LABELS[p]+'</div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">'
+      +'<div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;">Start</div><input type="datetime-local" id="edit-phase-start-'+p+'" class="form-input" style="font-size:12px;padding:6px;" value="'+toLocalDT(ph.startTime)+'"></div>'
+      +'<div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;">End</div><input type="datetime-local" id="edit-phase-end-'+p+'" class="form-input" style="font-size:12px;padding:6px;" value="'+toLocalDT(ph.endTime||'')+'"></div>'
+      +'</div>';
+    phaseTimes.appendChild(row);
+  });
+  renderEditHourlyLogs(heatId);
+  document.getElementById('edit-add-log-form').style.display='none';
+  document.getElementById('modal-edit-heat').classList.add('open');
+}
+
+function renderEditHourlyLogs(heatId){
+  var db=getDB();
+  var logs=db.hourlyLogs.filter(function(l){return l.heatId===heatId;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  var el=document.getElementById('edit-hourly-logs-list');
+  if(!el) return;
+  if(!logs.length){ el.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px 0;">No hourly logs recorded yet</div>'; return; }
+  el.innerHTML='';
+  logs.forEach(function(log){
+    var row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);';
+    var t=new Date(log.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+    var d=new Date(log.timestamp).toLocaleDateString('en-ZA',{day:'numeric',month:'short'});
+    var info=document.createElement('div'); info.innerHTML='<div style="font-size:13px;font-weight:700;">'+d+' '+t+' — '+log.temp+'°C</div><div style="font-size:11px;color:var(--muted);">Oil: '+(log.oilLevel||'—')+' mm'+(log.notes?' · '+log.notes:'')+(log._manualEntry?' (manual)':'')+'</div>'; row.appendChild(info);
+    var delBtn=document.createElement('button'); delBtn.textContent='×'; delBtn.style.cssText='background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px;'; (function(id){delBtn.onclick=function(){deleteEditLog(id);};})(log.id); row.appendChild(delBtn);
+  });
+}
+
+function editAddHourlyLog(){
+  var form=document.getElementById('edit-add-log-form');
+  form.style.display=form.style.display==='none'?'':'none';
+  var now=new Date(),off=now.getTimezoneOffset(),local=new Date(now.getTime()-off*60000);
+  document.getElementById('edit-log-time').value=local.toISOString().slice(0,16);
+}
+
+function editSaveNewLog(){
+  var timeVal=document.getElementById('edit-log-time').value;
+  var tempVal=document.getElementById('edit-log-temp').value;
+  if(!timeVal||!tempVal){ alert('Time and temperature are required'); return; }
+  var db=getDB();
+  var heat=db.heats.find(function(h){return h.id===editHeatId;});
+  if(!heat) return;
+  var log={id:genId(),heatId:editHeatId,reactor:heat.reactor,heatNumber:heat.heatNumber,timestamp:new Date(timeVal).toISOString(),temp:parseInt(tempVal),oilLevel:parseFloat(document.getElementById('edit-log-oil').value)||null,oilFlowing:null,condenser:null,notes:document.getElementById('edit-log-notes').value,photos:[],_manualEntry:true};
+  db.hourlyLogs.push(log);
+  saveDB(db);
+  document.getElementById('edit-add-log-form').style.display='none';
+  renderEditHourlyLogs(editHeatId);
+}
+
+function deleteEditLog(logId){
+  if(!confirm('Delete this log entry?')) return;
+  var db=getDB();
+  db.hourlyLogs=db.hourlyLogs.filter(function(l){return l.id!==logId;});
+  saveDB(db);
+  renderEditHourlyLogs(editHeatId);
+}
+
 
 // ═══════════════ SHIFT ═══════════════
 function openStartShiftModal(){ document.getElementById('modal-start-shift').classList.add('open'); }
 function openEndShiftModal(){ document.getElementById('modal-end-shift').classList.add('open'); }
 
+// Crew state for start shift modal
+let _shiftCrew = []; // [{name, role}]
+
+function populateShiftCrewSelect(){
+  const s=getSettings();
+  const sel=document.getElementById('shift-crew-select');
+  if(!sel) return;
+  sel.innerHTML='<option value="">— Add person —</option>';
+  (s.people||[]).forEach(function(p){ const o=document.createElement('option'); o.value=p.name; o.textContent=p.name+(p.role?' ('+p.role+')':''); sel.appendChild(o); });
+}
+function openStartShiftModal(){
+  _shiftCrew=[];
+  populateShiftCrewSelect();
+  renderCrewList();
+  document.getElementById('modal-start-shift').classList.add('open');
+}
+function addCrewMember(){
+  const sel=document.getElementById('shift-crew-select');
+  const inp=document.getElementById('shift-crew-input').value.trim();
+  const name=sel.value||inp;
+  if(!name) return;
+  if(_shiftCrew.find(function(c){return c.name===name;})) return;
+  const s=getSettings();
+  const person=(s.people||[]).find(function(p){return p.name===name;});
+  _shiftCrew.push({name:name,role:person?person.role:''});
+  sel.value='';
+  document.getElementById('shift-crew-input').value='';
+  renderCrewList();
+}
+function removeCrewMember(name){
+  _shiftCrew=_shiftCrew.filter(function(c){return c.name!==name;});
+  renderCrewList();
+}
+function renderCrewList(){
+  const el=document.getElementById('shift-crew-list');
+  if(!el) return;
+  el.innerHTML='';
+  if(!_shiftCrew.length){ el.innerHTML='<span style="font-size:12px;color:var(--muted);">No crew added yet</span>'; return; }
+  _shiftCrew.forEach(function(c){
+    var tag=document.createElement('div');
+    tag.style.cssText='display:flex;align-items:center;gap:4px;background:var(--amber);color:#1a0f00;border-radius:20px;padding:4px 10px;font-size:12px;font-weight:700;';
+    var cname=c.name.replace(/'/g,"&#39;");
+    tag.innerHTML='<span>'+c.name+(c.role?' &middot; '+c.role:'')+'</span>';
+    var btn=document.createElement('button');
+    btn.textContent='×';
+    btn.style.cssText='background:none;border:none;color:#1a0f00;cursor:pointer;padding:0;margin-left:4px;font-size:14px;line-height:1;';
+    btn.onclick=(function(n){return function(){removeCrewMember(n);};})(c.name);
+    tag.appendChild(btn);
+    el.appendChild(tag);
+  });
+}
 function startShift(){
-  const sel=document.getElementById('shift-supervisor-select').value;
-  const inp=document.getElementById('shift-supervisor-input').value.trim();
-  const name=inp||sel;
-  if(!name){ alert('Please select or enter a supervisor name'); return; }
+  if(!_shiftCrew.length){
+    const inp=document.getElementById('shift-crew-input').value.trim();
+    if(inp){ addCrewMember(); }
+    if(!_shiftCrew.length){ alert('Add at least one crew member'); return; }
+  }
   const type=document.getElementById('shift-type-select').value;
+  const supervisor=_shiftCrew[0].name;
   const db=getDB();
-  const shift={id:genId(),supervisor:name,shiftType:type,startTime:new Date().toISOString(),endTime:null,oilUsed:null,issues:'',handover:''};
+  const shift={id:genId(),supervisor:supervisor,crew:_shiftCrew,shiftType:type,startTime:new Date().toISOString(),endTime:null,oilUsed:null,issues:'',handover:''};
   db.shifts.push(shift);
-  // Save supervisor name for future
-  const s=getSettings(); if(!s.supervisors.includes(name)){s.supervisors.push(name);localStorage.setItem('py_settings',JSON.stringify(s));}
+  const s=getSettings();
+  _shiftCrew.forEach(function(c){ if(!s.supervisors.includes(c.name)){ s.supervisors.push(c.name); } });
+  localStorage.setItem('py_settings',JSON.stringify(s));
   saveDB(db);
   closeModal('modal-start-shift');
   renderHome();
@@ -1623,6 +1965,9 @@ document.querySelectorAll('.modal-overlay').forEach(m=>{ m.addEventListener('cli
 
 // ═══════════════ ADMIN ═══════════════
 function renderAdminScreen(){
+  adminRenderPositions();
+  adminRenderPeople();
+  adminRenderPeopleRoleSelect();
   const url = getServerUrl();
   const inp = document.getElementById('admin-server-url');
   if(inp) inp.value = url;
@@ -1882,6 +2227,256 @@ function saveServerUrl(){
   renderServerSettings();
   if(url){ pullFromServer().then(()=>renderHome()).catch(()=>{}); }
 }
+
+
+
+// ════════════ TEMPERATURE GRAPH ════════════
+function renderTempGraph(logs){
+  const card=document.getElementById('temp-graph-card');
+  const container=document.getElementById('temp-graph-container');
+  if(!card||!container) return;
+  const validLogs=logs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  if(validLogs.length<2){ card.style.display='none'; return; }
+  card.style.display='';
+  const temps=validLogs.map(function(l){return l.temp;});
+  const times=validLogs.map(function(l){return new Date(l.timestamp);});
+  const maxT=Math.max.apply(null,temps);
+  const minT=Math.min.apply(null,temps);
+  const W=Math.max(validLogs.length*40,300);
+  const H=120; const PAD=8;
+  const pts=temps.map(function(t,i){
+    var x=PAD+i*(W-PAD*2)/(temps.length-1);
+    var y=PAD+(H-PAD*2)*(1-(t-minT)/Math.max(maxT-minT,1));
+    return x+','+y;
+  }).join(' ');
+  var svg='<svg viewBox="0 0 '+W+' '+(H+30)+'" width="'+(W+20)+'px" height="'+(H+30)+'px" style="display:block;">';
+  // Grid lines
+  [0,0.25,0.5,0.75,1].forEach(function(f){
+    var y=PAD+(H-PAD*2)*f;
+    var temp=Math.round(maxT-(maxT-minT)*f);
+    svg+='<line x1="'+PAD+'" x2="'+(W-PAD)+'" y1="'+y+'" y2="'+y+'" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>';
+    svg+='<text x="'+PAD+'" y="'+(y-3)+'" fill="rgba(255,255,255,0.3)" font-size="9">'+temp+'°C</text>';
+  });
+  // Gradient fill
+  svg+='<defs><linearGradient id="tg" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#EA580C" stop-opacity="0.4"/><stop offset="100%" stop-color="#EA580C" stop-opacity="0"/></linearGradient></defs>';
+  svg+='<polygon points="'+pts+' '+(W-PAD)+','+(H-PAD)+' '+PAD+','+(H-PAD)+'" fill="url(#tg)"/>';
+  // Line
+  svg+='<polyline points="'+pts+'" fill="none" stroke="#EA580C" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
+  // Dots and labels
+  temps.forEach(function(t,i){
+    var x=PAD+i*(W-PAD*2)/(temps.length-1);
+    var y=PAD+(H-PAD*2)*(1-(t-minT)/Math.max(maxT-minT,1));
+    svg+='<circle cx="'+x+'" cy="'+y+'" r="4" fill="#EA580C"/>';
+    svg+='<text x="'+x+'" y="'+(y-9)+'" fill="white" font-size="9" text-anchor="middle">'+t+'°</text>';
+    var tStr=times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+    svg+='<text x="'+x+'" y="'+(H+20)+'" fill="rgba(255,255,255,0.4)" font-size="8" text-anchor="middle">'+tStr+'</text>';
+  });
+  svg+='</svg>';
+  container.innerHTML=svg;
+}
+
+// ════════════ PHOTO CAPTURE ════════════
+var _logPhotos=[]; // [{type, dataUrl, name}]
+var _logPhotoType='';
+
+function captureLogPhoto(type){
+  _logPhotoType=type;
+  document.getElementById('log-photo-input').click();
+}
+function handleLogPhoto(event){
+  var file=event.target.files[0];
+  if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(e){
+    _logPhotos.push({type:_logPhotoType,dataUrl:e.target.result,name:file.name,isVideo:file.type.startsWith('video/')});
+    renderLogPhotoThumbs();
+    event.target.value='';
+  };
+  reader.readAsDataURL(file);
+}
+function renderLogPhotoThumbs(){
+  var el=document.getElementById('log-photo-thumbs');
+  if(!el) return;
+  el.innerHTML='';
+  _logPhotos.forEach(function(p,i){
+    var labels={temp:'🌡 Temp',condenser:'💧 Condenser',sightglass:'🔵 Sight Glass',oil:'🛢 Oil'};
+    var wrap=document.createElement('div');
+    wrap.style.cssText='position:relative;width:70px;';
+    if(p.isVideo){
+      wrap.innerHTML='<div style="width:70px;height:70px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:24px;">🎬</div>';
+    } else {
+      wrap.innerHTML='<img src="'+p.dataUrl+'" style="width:70px;height:70px;object-fit:cover;border-radius:8px;" />';
+    }
+    wrap.innerHTML+='<div style="font-size:9px;color:var(--muted);text-align:center;margin-top:2px;">'+(labels[p.type]||p.type)+'</div>';
+    wrap.innerHTML+='<button onclick="removeLogPhoto('+i+')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);border:none;color:white;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;padding:0;line-height:1;">×</button>';
+    el.appendChild(wrap);
+  });
+  // Update WA photo row if visible
+  renderWAPhotoRow();
+}
+function removeLogPhoto(i){
+  _logPhotos.splice(i,1);
+  renderLogPhotoThumbs();
+}
+function renderWAPhotoRow(){
+  var el=document.getElementById('wa-photo-row');
+  if(!el) return;
+  el.innerHTML='';
+  if(!_logPhotos.length) return;
+  _logPhotos.forEach(function(p){
+    if(p.isVideo){
+      var v=document.createElement('div');v.style.cssText='width:60px;height:60px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;';v.textContent='🎬';el.appendChild(v);
+    } else {
+      var img=document.createElement('img');img.src=p.dataUrl;img.style.cssText='width:60px;height:60px;object-fit:cover;border-radius:8px;';el.appendChild(img);
+    }
+  });
+}
+
+// ════════════ WA SHARE ════════════
+function shareWAMessage(){
+  if(!window._waMessage){ alert('No message to share yet. Submit an hourly log first.'); return; }
+  var encoded=encodeURIComponent(window._waMessage);
+  var url='https://wa.me/?text='+encoded;
+  window.open(url,'_blank');
+  if(_logPhotos.length){
+    setTimeout(function(){
+      alert('📸 '+_logPhotos.length+' photo(s) captured. Save them from the app to attach in WhatsApp.');
+    },500);
+  }
+}
+
+// ════════════ ADMIN — POSITIONS ════════════
+function adminRenderPositions(){
+  var s=getSettings();
+  var el=document.getElementById('admin-positions-list');
+  if(!el) return;
+  el.innerHTML='';
+  (s.positions||[]).forEach(function(pos,i){
+    var row=document.createElement('div');
+    row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);';
+    row.innerHTML='<span style="font-size:14px;">'+pos+'</span><button onclick="adminRemovePosition('+i+')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;">×</button>';
+    el.appendChild(row);
+  });
+  if(!s.positions||!s.positions.length) el.innerHTML='<div style="font-size:12px;color:var(--muted);">No positions yet</div>';
+}
+function adminAddPosition(){
+  var inp=document.getElementById('admin-new-position');
+  var name=inp.value.trim();
+  if(!name) return;
+  var s=getSettings();
+  if(!s.positions) s.positions=[];
+  if(s.positions.includes(name)){ alert('Position already exists'); return; }
+  s.positions.push(name);
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  inp.value='';
+  adminRenderPositions();
+  adminRenderPeopleRoleSelect();
+}
+function adminRemovePosition(i){
+  var s=getSettings();
+  s.positions.splice(i,1);
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  adminRenderPositions();
+}
+
+// ════════════ ADMIN — PEOPLE ════════════
+var _sigPersonIndex=-1;
+
+function adminRenderPeopleRoleSelect(){
+  var s=getSettings();
+  var sel=document.getElementById('admin-new-person-role');
+  if(!sel) return;
+  sel.innerHTML='<option value="">— Select role —</option>';
+  (s.positions||[]).forEach(function(pos){ var o=document.createElement('option');o.value=pos;o.textContent=pos;sel.appendChild(o); });
+}
+function adminRenderPeople(){
+  var s=getSettings();
+  var el=document.getElementById('admin-people-list');
+  if(!el) return;
+  el.innerHTML='';
+  (s.people||[]).forEach(function(p,i){
+    var row=document.createElement('div');
+    row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);';
+    var left='<div><div style="font-size:14px;font-weight:700;">'+p.name+'</div><div style="font-size:11px;color:var(--muted);">'+(p.role||'No role')+(p.signature?' · ✍ Sig saved':'')+'</div></div>';
+    var btns='<div style="display:flex;gap:6px;">'
+      +'<button onclick="openSignaturePad('+i+')" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;">✍ Sig</button>'
+      +'<button onclick="adminRemovePerson('+i+')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;">×</button>'
+      +'</div>';
+    row.innerHTML=left+btns;
+    el.appendChild(row);
+  });
+  if(!s.people||!s.people.length) el.innerHTML='<div style="font-size:12px;color:var(--muted);">No people added yet</div>';
+}
+function adminAddPerson(){
+  var name=document.getElementById('admin-new-person-name').value.trim();
+  var role=document.getElementById('admin-new-person-role').value;
+  if(!name){ alert('Enter a name'); return; }
+  var s=getSettings();
+  if(!s.people) s.people=[];
+  if(s.people.find(function(p){return p.name===name;})){ alert('Person already exists'); return; }
+  s.people.push({name:name,role:role,signature:null});
+  // Also add to supervisors list for backward compat
+  if(!s.supervisors.includes(name)) s.supervisors.push(name);
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  document.getElementById('admin-new-person-name').value='';
+  document.getElementById('admin-new-person-role').value='';
+  adminRenderPeople();
+  syncToServer();
+}
+function adminRemovePerson(i){
+  var s=getSettings();
+  s.people.splice(i,1);
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  adminRenderPeople();
+}
+
+// ════════════ SIGNATURE PAD ════════════
+var _sigCanvas=null, _sigCtx=null, _sigDrawing=false;
+
+function openSignaturePad(personIndex){
+  _sigPersonIndex=personIndex;
+  var s=getSettings();
+  var person=s.people[personIndex];
+  document.getElementById('admin-sig-name').textContent=person.name;
+  document.getElementById('admin-sig-panel').style.display='';
+  document.getElementById('admin-sig-panel').scrollIntoView({behavior:'smooth'});
+  _sigCanvas=document.getElementById('admin-sig-canvas');
+  _sigCtx=_sigCanvas.getContext('2d');
+  _sigCtx.clearRect(0,0,_sigCanvas.width,_sigCanvas.height);
+  _sigCtx.strokeStyle='#f0a500';
+  _sigCtx.lineWidth=2.5;
+  _sigCtx.lineCap='round';
+  _sigCtx.lineJoin='round';
+  // Load existing signature
+  if(person.signature){
+    var img=new Image();
+    img.onload=function(){_sigCtx.drawImage(img,0,0);};
+    img.src=person.signature;
+  }
+  _sigCanvas.onpointerdown=function(e){ _sigDrawing=true; _sigCtx.beginPath(); var r=_sigCanvas.getBoundingClientRect(); _sigCtx.moveTo(e.clientX-r.left,e.clientY-r.top); e.preventDefault(); };
+  _sigCanvas.onpointermove=function(e){ if(!_sigDrawing) return; var r=_sigCanvas.getBoundingClientRect(); var scaleX=_sigCanvas.width/r.width; var scaleY=_sigCanvas.height/r.height; _sigCtx.lineTo((e.clientX-r.left)*scaleX,(e.clientY-r.top)*scaleY); _sigCtx.stroke(); e.preventDefault(); };
+  _sigCanvas.onpointerup=function(){ _sigDrawing=false; };
+}
+function clearSignature(){
+  if(_sigCtx) _sigCtx.clearRect(0,0,_sigCanvas.width,_sigCanvas.height);
+}
+function saveSignature(){
+  if(_sigPersonIndex<0) return;
+  var s=getSettings();
+  s.people[_sigPersonIndex].signature=_sigCanvas.toDataURL();
+  localStorage.setItem('py_settings',JSON.stringify(s));
+  cancelSignature();
+  adminRenderPeople();
+  syncToServer();
+}
+function cancelSignature(){
+  _sigPersonIndex=-1;
+  document.getElementById('admin-sig-panel').style.display='none';
+}
+
+// ════════════ WIRE UP renderReactorDetail to show temp graph ════════════
+// Patch renderHourlyLogsList to also update the graph
+var _origRenderHourlyLogsList = typeof renderHourlyLogsList === 'function' ? renderHourlyLogsList : null;
 
 </script>
 </body>
