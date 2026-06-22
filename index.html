@@ -612,6 +612,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <!-- photo input moved to body -->
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
+      <div id="log-submit-error" style="display:none;color:var(--red);font-size:13px;font-weight:600;text-align:center;padding:6px 0;width:100%;"></div>
       <button class="btn btn-ghost" onclick="closeModal('modal-hourly-log')">Cancel</button>
       <button class="btn btn-orange" onclick="submitHourlyLog()">Submit Log</button>
     </div>
@@ -1445,6 +1446,7 @@ function openHourlyLogModal(){
   document.getElementById('log-cond-ok').style.color='var(--text)';
   document.getElementById('log-cond-low').style.background='var(--surface2)';
   document.getElementById('log-cond-low').style.color='var(--text)';
+  var errEl=document.getElementById('log-submit-error'); if(errEl) errEl.style.display='none';
   document.getElementById('modal-hourly-log').classList.add('open');
 }
 
@@ -1466,23 +1468,41 @@ function setCondenser(v){
 }
 
 function submitHourlyLog(){
-  const temp = parseInt(document.getElementById('log-temp-input').value||document.getElementById('log-temp-slider').value);
-  const oilLevel = document.getElementById('log-oil-level').value;
-  const notes = document.getElementById('log-notes').value;
-  if(!temp){ alert('Please enter a temperature'); return; }
-  const heat = getActiveHeat(currentReactor);
-  if(!heat){ alert('No active heat'); return; }
-  const db = getDB();
-  const log = {
+  // Read temp from typed input first, then slider
+  var tempInput = document.getElementById('log-temp-input');
+  var tempSlider = document.getElementById('log-temp-slider');
+  var rawTemp = (tempInput && tempInput.value) ? tempInput.value : (tempSlider ? tempSlider.value : '');
+  var temp = parseInt(rawTemp);
+
+  // Show inline error rather than alert (alerts suppressed on some mobile browsers)
+  var errEl = document.getElementById('log-submit-error');
+  if(!temp || isNaN(temp)){
+    if(errEl) { errEl.textContent = '⚠️ Enter a temperature first'; errEl.style.display='block'; }
+    return;
+  }
+  if(errEl) errEl.style.display='none';
+
+  var heat = getActiveHeat(currentReactor);
+  if(!heat){
+    if(errEl) { errEl.textContent = '⚠️ No active heat found'; errEl.style.display='block'; }
+    return;
+  }
+
+  var oilLevel = document.getElementById('log-oil-level').value;
+  var notes = document.getElementById('log-notes').value;
+  var db = getDB();
+  var log = {
     id:genId(), heatId:heat.id, reactor:currentReactor, heatNumber:heat.heatNumber,
-    timestamp:new Date().toISOString(), temp, oilLevel:parseFloat(oilLevel)||null,
-    oilFlowing:logOilFlowing, condenser:logCondenser, notes,
+    timestamp:new Date().toISOString(), temp:temp,
+    oilLevel:parseFloat(oilLevel)||null,
+    oilFlowing:logOilFlowing, condenser:logCondenser, notes:notes,
     photos:_logPhotos.map(function(p){return {type:p.type,dataUrl:p.dataUrl,isVideo:p.isVideo||false};}),
   };
   db.hourlyLogs.push(log);
   saveDB(db);
   closeModal('modal-hourly-log');
   renderReactorDetail(currentReactor);
+  syncToServer();
 }
 
 // ═══════════════ END OF RUN ═══════════════
