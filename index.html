@@ -450,6 +450,9 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 </div><!-- /app -->
 
+<!-- Photo inputs — kept outside all modals so camera return doesn't close the modal -->
+<input type="file" id="log-photo-input" accept="image/*,video/*" capture="environment" style="display:none;position:fixed;top:-9999px;" onchange="handleLogPhoto(event)">
+
 <!-- ── BOTTOM NAV ── -->
 <nav id="nav">
   <button class="nav-btn active" id="nav-home" onclick="navigate('home')">
@@ -576,8 +579,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <input class="form-input" id="log-temp-input" type="number" placeholder="e.g. 290" inputmode="numeric" oninput="syncTempSlider(this.value)">
     </div>
     <div class="form-group">
-      <label class="form-label">Oil Level in Condenser (mm / reading)</label>
-      <input class="form-input" id="log-oil-level" type="number" placeholder="e.g. 2500" inputmode="numeric">
+      <label class="form-label">Oil Level in Condenser (L)</label>
+      <input class="form-input" id="log-oil-level" type="number" placeholder="e.g. 350" inputmode="numeric">
     </div>
     <div class="form-group">
       <label class="form-label">Oil Flowing in Sight Glass?</label>
@@ -606,7 +609,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="btn btn-ghost btn-sm" onclick="captureLogPhoto('oil')" style="flex-direction:column;height:56px;font-size:11px;">🛢<br>Oil Level</button>
       </div>
       <div id="log-photo-thumbs" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <input type="file" id="log-photo-input" accept="image/*,video/*" capture="environment" style="display:none" onchange="handleLogPhoto(event)">
+      <!-- photo input moved to body -->
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-hourly-log')">Cancel</button>
@@ -700,7 +703,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <div style="font-size:12px;font-weight:700;margin-bottom:8px;color:var(--amber);">Add Hourly Log</div>
       <div class="form-group"><label class="form-label">Date & Time</label><input class="form-input" id="edit-log-time" type="datetime-local"></div>
       <div class="form-group"><label class="form-label">Temperature (°C)</label><input class="form-input" id="edit-log-temp" type="number" inputmode="numeric"></div>
-      <div class="form-group"><label class="form-label">Oil Level (mm)</label><input class="form-input" id="edit-log-oil" type="number" inputmode="numeric"></div>
+      <div class="form-group"><label class="form-label">Oil Level (L)</label><input class="form-input" id="edit-log-oil" type="number" inputmode="numeric"></div>
       <div class="form-group"><label class="form-label">Notes</label><input class="form-input" id="edit-log-notes" type="text" placeholder="Optional notes..."></div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById('edit-add-log-form').style.display='none'">Cancel</button>
@@ -1140,7 +1143,7 @@ function renderHourlyLogsList(logs){
   renderTempGraph(logs);
   const el = document.getElementById('hourly-logs-list');
   if(!logs.length){ el.innerHTML='<div style="color:var(--muted);font-size:13px">No logs yet</div>'; return; }
-  el.innerHTML = [...logs].reverse().map(l=>`
+  el.innerHTML = [...logs].sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);}).reverse().map(l=>`
     <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <div>
         <div style="font-size:13px;color:var(--muted)">${fmtTime(l.timestamp)}</div>
@@ -1148,7 +1151,7 @@ function renderHourlyLogsList(logs){
       </div>
       <div style="text-align:right">
         <div style="font-size:22px;font-weight:800;color:var(--orange);font-family:var(--mono)">${l.temp}°</div>
-        <div style="font-size:11px;color:var(--muted)">Oil:${l.oilLevel||'—'}mm ${l.oilFlowing?'✅':'❌'} ${l.condenser==='ok'?'💧':'⚠️'}</div>
+        <div style="font-size:11px;color:var(--muted)">Oil:${l.oilLevel||'—'}L ${l.oilFlowing?'✅':'❌'} ${l.condenser==='ok'?'💧':'⚠️'}</div>
       </div>
     </div>`).join('');
 }
@@ -1188,7 +1191,7 @@ function renderWAPreview(heat, lastLog){
     prodHrs !== null ? 'Production time: '+prodHrs+'hours' : '',
     'Reactor temp: '+lastLog.temp+'°C',
     isInCooldown && coolHrs !== null ? 'Cooldown time: '+coolHrs+'hours' : '',
-    lastLog.oilLevel ? 'Oil level: '+lastLog.oilLevel+' mm' : '',
+    lastLog.oilLevel ? 'Oil level: '+lastLog.oilLevel+' L' : '',
     lastLog.oilFlowing !== null ? 'Oil flowing: '+(lastLog.oilFlowing ? 'Yes ✅' : 'No ❌') : '',
     lastLog.condenser ? 'Condenser water: '+(lastLog.condenser==='ok'?'OK ✅':'Low ⚠️') : '',
     lastLog.notes ? lastLog.notes : '',
@@ -1592,7 +1595,7 @@ function renderEditHourlyLogs(heatId){
     var row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);';
     var t=new Date(log.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
     var d=new Date(log.timestamp).toLocaleDateString('en-ZA',{day:'numeric',month:'short'});
-    var info=document.createElement('div'); info.innerHTML='<div style="font-size:13px;font-weight:700;">'+d+' '+t+' — '+log.temp+'°C</div><div style="font-size:11px;color:var(--muted);">Oil: '+(log.oilLevel||'—')+' mm'+(log.notes?' · '+log.notes:'')+(log._manualEntry?' (manual)':'')+'</div>'; row.appendChild(info);
+    var info=document.createElement('div'); info.innerHTML='<div style="font-size:13px;font-weight:700;">'+d+' '+t+' — '+log.temp+'°C</div><div style="font-size:11px;color:var(--muted);">Oil: '+(log.oilLevel||'—')+' L'+(log.notes?' · '+log.notes:'')+(log._manualEntry?' (manual)':'')+'</div>'; row.appendChild(info);
     var delBtn=document.createElement('button'); delBtn.textContent='×'; delBtn.style.cssText='background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px;'; (function(id){delBtn.onclick=function(){deleteEditLog(id);};})(log.id); row.appendChild(delBtn);
   });
 }
@@ -1960,7 +1963,15 @@ function showHeatDetail(id){
 
 // ═══════════════ MODAL HELPERS ═══════════════
 function closeModal(id){ document.getElementById(id).classList.remove('open'); }
-document.querySelectorAll('.modal-overlay').forEach(m=>{ m.addEventListener('click',function(e){ if(e.target===this) closeModal(this.id); }); });
+var _cameraActive = false;
+var _cameraReturnAt = 0;
+document.querySelectorAll('.modal-overlay').forEach(function(m){
+  m.addEventListener('click', function(e){
+    // Don't close if we just returned from the camera (300ms grace window)
+    if(_cameraActive || Date.now() - _cameraReturnAt < 600) return;
+    if(e.target===this) closeModal(this.id);
+  });
+});
 
 
 // ═══════════════ ADMIN ═══════════════
@@ -2281,16 +2292,25 @@ var _logPhotoType='';
 
 function captureLogPhoto(type){
   _logPhotoType=type;
-  document.getElementById('log-photo-input').click();
+  _cameraActive=true;
+  var inp=document.getElementById('log-photo-input');
+  inp.value=''; // reset so same file can be re-selected
+  inp.click();
 }
 function handleLogPhoto(event){
+  _cameraActive=false;
+  _cameraReturnAt=Date.now();
   var file=event.target.files[0];
-  if(!file) return;
+  if(!file){ return; }
   var reader=new FileReader();
   reader.onload=function(e){
     _logPhotos.push({type:_logPhotoType,dataUrl:e.target.result,name:file.name,isVideo:file.type.startsWith('video/')});
     renderLogPhotoThumbs();
-    event.target.value='';
+    // Ensure the hourly log modal is still open
+    var modal=document.getElementById('modal-hourly-log');
+    if(modal && !modal.classList.contains('open')){
+      modal.classList.add('open');
+    }
   };
   reader.readAsDataURL(file);
 }
