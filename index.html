@@ -1081,7 +1081,7 @@ function renderReactorDetail(r){
       <div style="font-size:52px;font-weight:800;font-family:var(--mono);color:${color};line-height:1.1">${fmtDuration(elapsed)}</div>
       <div style="font-size:13px;color:var(--muted);margin-top:4px">Started ${fmtTime(heat.phases[phase].startTime)}</div>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:center">
-        <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px" onclick="openEditHeatModal(getActiveHeat(currentReactor)&&getActiveHeat(currentReactor).id)">✏️ Edit Heat</button>
+        <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px" onclick="openEditCurrentHeat()">✏️ Edit Heat</button>
         <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px;color:var(--red);" onclick="revertLastPhase(getActiveHeat(currentReactor)&&getActiveHeat(currentReactor).id)">↩ Revert Phase</button>
         ${phase==='reaction'?`<button class="btn btn-ghost-amber btn-sm" style="width:auto;padding:6px 14px" onclick="openHourlyLogModal()">📊 Hourly Log</button>`:''}
       </div>`;
@@ -1462,6 +1462,19 @@ function confirmPhaseAndShare(share){
   renderReactorDetail(currentReactor);
 }
 
+// Opens edit for current reactor's heat (active or most recent complete)
+function openEditCurrentHeat(){
+  var db=getDB();
+  var heat=getActiveHeat(currentReactor);
+  if(!heat){
+    // Find most recent complete heat for this reactor
+    heat=db.heats.filter(function(h){return h.reactor===currentReactor;})
+      .sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);})[0];
+  }
+  if(heat) openEditHeatModal(heat.id);
+  else alert('No heat found for this reactor');
+}
+
 // ═══════════════ NEW HEAT ═══════════════
 function openNewHeatModal(r){
   currentReactor = r;
@@ -1661,6 +1674,27 @@ function saveEditHeat(){
     if(startEl && startEl.value){ if(!heat.phases[p]) heat.phases[p]={}; heat.phases[p].startTime=new Date(startEl.value).toISOString(); }
     if(endEl && endEl.value){ if(!heat.phases[p]) heat.phases[p]={}; heat.phases[p].endTime=new Date(endEl.value).toISOString(); }
   });
+  // Recalculate heat status based on which phases now have data
+  // Find the last phase that has a startTime but no endTime = current status
+  // If all phases complete = keep complete; otherwise set to last active phase
+  if(heat.status !== 'complete'){
+    var lastActivePhase = 'loading';
+    PHASES.forEach(function(p){
+      if(heat.phases[p] && heat.phases[p].startTime) lastActivePhase = p;
+    });
+    // If the last active phase now has an endTime, move to next
+    var lastPh = heat.phases[lastActivePhase];
+    if(lastPh && lastPh.endTime){
+      var nextIdx = PHASES.indexOf(lastActivePhase)+1;
+      if(nextIdx < PHASES.length){
+        var nextP = PHASES[nextIdx];
+        if(!heat.phases[nextP]) heat.phases[nextP] = {startTime:lastPh.endTime, endTime:null};
+        heat.status = nextP;
+      }
+    } else {
+      heat.status = lastActivePhase;
+    }
+  }
   db.heats=db.heats.map(function(h){return h.id===heat.id?heat:h;});
   saveDB(db); syncToServer(); closeModal('modal-edit-heat'); renderReactorDetail(currentReactor);
 }
@@ -1677,12 +1711,11 @@ function openEditHeatModal(heatId){
   document.getElementById('edit-heat-material').value=heat.material||'Passenger Tyres';
   document.getElementById('edit-heat-weight').value=heat.loadWeight||'';
   var phaseTimes=document.getElementById('edit-phase-times'); phaseTimes.innerHTML='';
+  var toLocalDT=function(iso){ if(!iso) return ''; var d=new Date(iso),off=d.getTimezoneOffset(),local=new Date(d.getTime()-off*60000); return local.toISOString().slice(0,16); };
   PHASES.forEach(function(p){
-    if(!heat.phases[p]) return;
-    var ph=heat.phases[p];
-    var toLocalDT=function(iso){ if(!iso) return ''; var d=new Date(iso),off=d.getTimezoneOffset(),local=new Date(d.getTime()-off*60000); return local.toISOString().slice(0,16); };
-    var row=document.createElement('div'); row.style.cssText='margin-bottom:10px;padding:10px;background:var(--surface2);border-radius:8px;';
-    row.innerHTML='<div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:6px;">'+PHASE_LABELS[p]+'</div>'
+    var ph=heat.phases[p]||{startTime:null,endTime:null};
+    var row=document.createElement('div'); row.style.cssText='margin-bottom:10px;padding:10px;background:var(--surface2);border-radius:8px;'+(heat.phases[p]?'':'opacity:0.5;');
+    row.innerHTML='<div style="font-size:12px;font-weight:700;color:var(--amber);margin-bottom:6px;">'+PHASE_LABELS[p]+(heat.phases[p]?'':' <span style="font-size:10px;color:var(--muted);">(not yet started — fill in to add)</span>')+'</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">'
       +'<div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;">Start</div><input type="datetime-local" id="edit-phase-start-'+p+'" class="form-input" style="font-size:12px;padding:6px;" value="'+toLocalDT(ph.startTime)+'"></div>'
       +'<div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;">End</div><input type="datetime-local" id="edit-phase-end-'+p+'" class="form-input" style="font-size:12px;padding:6px;" value="'+toLocalDT(ph.endTime||'')+'"></div>'
