@@ -565,8 +565,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 </div>
 
 <!-- Hourly Log Modal -->
-<div class="modal-overlay" id="modal-hourly-log">
-  <div class="modal-sheet">
+<div class="modal-overlay" id="modal-hourly-log" style="flex-direction:column;justify-content:flex-end;">
+  <div class="modal-sheet" style="border-radius:20px 20px 0 0;padding-bottom:90px;">
     <div class="modal-handle"></div>
     <div class="modal-title">Hourly Log Entry</div>
     <div class="temp-display">
@@ -609,14 +609,13 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <button class="btn btn-ghost btn-sm" onclick="captureLogPhoto('oil')" style="flex-direction:column;height:56px;font-size:11px;">🛢<br>Oil Level</button>
       </div>
       <div id="log-photo-thumbs" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
-      <!-- photo input moved to body -->
     </div>
-    <div id="log-submit-error" style="display:none;color:var(--red);font-size:13px;font-weight:600;text-align:center;padding:6px 0;margin-bottom:4px;"></div>
+    <div id="log-submit-error" style="display:none;color:#ff6b6b;font-size:14px;font-weight:700;text-align:center;padding:8px;background:rgba(255,0,0,0.1);border-radius:8px;margin-top:8px;"></div>
   </div>
-  <!-- Sticky submit buttons OUTSIDE the scrollable sheet, fixed to bottom of overlay -->
-  <div style="position:sticky;bottom:0;left:0;right:0;background:var(--surface);padding:12px 16px 28px;border-top:1px solid var(--border);display:flex;gap:8px;z-index:10;">
-    <button class="btn btn-ghost" style="flex:1" onclick="closeModal('modal-hourly-log')">Cancel</button>
-    <button class="btn btn-orange" style="flex:1" onclick="submitHourlyLog()">Submit Log</button>
+  <!-- Action bar — rendered as last child of overlay, fixed positioning via JS -->
+  <div id="log-action-bar" style="width:100%;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px 32px;display:flex;gap:10px;position:fixed;bottom:0;left:0;right:0;z-index:9999;">
+    <button class="btn btn-ghost" style="flex:1;font-size:16px;font-weight:700;" onclick="closeModal('modal-hourly-log')">Cancel</button>
+    <button class="btn btn-orange" style="flex:1;font-size:16px;font-weight:700;" onclick="submitHourlyLog()">Submit Log</button>
   </div>
 </div>
 
@@ -1449,6 +1448,7 @@ function openHourlyLogModal(){
   document.getElementById('log-cond-low').style.color='var(--text)';
   var errEl=document.getElementById('log-submit-error'); if(errEl) errEl.style.display='none';
   document.getElementById('modal-hourly-log').classList.add('open');
+  var bar=document.getElementById('log-action-bar'); if(bar) bar.style.display='flex';
 }
 
 function updateTempDisplay(v){ document.getElementById('log-temp-display').textContent=v; document.getElementById('log-temp-input').value=v; }
@@ -1983,7 +1983,7 @@ function showHeatDetail(id){
 }
 
 // ═══════════════ MODAL HELPERS ═══════════════
-function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); if(id==='modal-hourly-log'){var bar=document.getElementById('log-action-bar');if(bar)bar.style.display='none';} }
 var _cameraActive = false;
 var _cameraReturnAt = 0;
 document.querySelectorAll('.modal-overlay').forEach(function(m){
