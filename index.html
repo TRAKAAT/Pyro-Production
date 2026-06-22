@@ -193,7 +193,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 .filter-pill.active { background: var(--amber); color: #000; border-color: var(--amber); font-weight: 600; }
 
 /* ── BIG ACTION BUTTON (sticky bottom in reactor detail) ── */
-.sticky-action { position: sticky; bottom: 80px; left: 0; right: 0; padding: 12px 16px; background: linear-gradient(to top, var(--bg) 60%, transparent); z-index: 10; }
+.sticky-action { padding: 12px 16px 4px; }
 
 /* ── METRIC TILES ── */
 .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 16px; margin-bottom: 14px; }
@@ -819,7 +819,16 @@ const CHECKLIST_SECTIONS = [
 // ── DB HELPERS ──
 function genId(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function getDB(){ try{ return JSON.parse(localStorage.getItem('py_db'))||{heats:[],shifts:[],checklists:[],hourlyLogs:[]}; }catch(e){ return {heats:[],shifts:[],checklists:[],hourlyLogs:[]}; } }
-function saveDB(db){ localStorage.setItem('py_db',JSON.stringify(db)); }
+function saveDB(db){
+  // Strip photo dataUrls before saving to localStorage to avoid quota exceeded
+  var dbCopy = JSON.parse(JSON.stringify(db));
+  if(dbCopy.hourlyLogs){
+    dbCopy.hourlyLogs.forEach(function(l){
+      if(l.photos) l.photos = l.photos.map(function(p){ return {type:p.type,isVideo:p.isVideo,hasPhoto:true}; });
+    });
+  }
+  localStorage.setItem('py_db', JSON.stringify(dbCopy));
+}
 function getSettings(){ try{ const s=JSON.parse(localStorage.getItem('py_settings'))||{}; if(!s.supervisors) s.supervisors=['Bongisani','Nkosingipiwe','Phillip','Eric','Lhine','Kganu','Luckman','Kleiman']; if(!s.feedMaterials) s.feedMaterials=['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres']; if(!s.positions) s.positions=['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance']; if(!s.people) s.people=[]; return s; }catch(e){ return {supervisors:[],feedMaterials:[],positions:['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance'],people:[]}; } }
 
 // ── STATE ──
@@ -1072,6 +1081,7 @@ function renderReactorDetail(r){
       <div style="font-size:13px;color:var(--muted);margin-top:4px">Started ${fmtTime(heat.phases[phase].startTime)}</div>
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:center">
         <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px" onclick="openEditHeatModal(getActiveHeat(currentReactor)&&getActiveHeat(currentReactor).id)">✏️ Edit Heat</button>
+        <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px;color:var(--red);" onclick="revertLastPhase(getActiveHeat(currentReactor)&&getActiveHeat(currentReactor).id)">↩ Revert Phase</button>
         ${phase==='reaction'?`<button class="btn btn-ghost-amber btn-sm" style="width:auto;padding:6px 14px" onclick="openHourlyLogModal()">📊 Hourly Log</button>`:''}
       </div>`;
   } else {
@@ -1115,6 +1125,22 @@ function renderReactorDetail(r){
   renderStickyAction(heat, phase);
 }
 
+function revertLastPhase(heatId){
+  if(!confirm('Revert to previous phase? The last phase transition will be undone.')) return;
+  var db=getDB();
+  var heat=db.heats.find(function(h){return h.id===heatId;});
+  if(!heat) return;
+  // Find the current phase and remove it, restore previous
+  var curPhaseIdx=PHASES.indexOf(heat.status);
+  if(curPhaseIdx<=0) return;
+  var curPhase=PHASES[curPhaseIdx];
+  var prevPhase=PHASES[curPhaseIdx-1];
+  delete heat.phases[curPhase];
+  if(heat.phases[prevPhase]) heat.phases[prevPhase].endTime=null;
+  heat.status=prevPhase;
+  db.heats=db.heats.map(function(h){return h.id===heat.id?heat:h;});
+  saveDB(db); syncToServer(); renderReactorDetail(currentReactor);
+}
 function renderPhaseTimeline(heat){
   const el = document.getElementById('phase-timeline');
   const phase = currentPhaseOf(heat);
@@ -1965,7 +1991,11 @@ function renderHistory(){
     const totalMs=PHASES.reduce((a,p)=>a+(h.phases[p]?phaseDurationMs(h.phases[p]):0),0);
     const cbKg=(h.yields?.cbBags||[]).reduce((a,b)=>a+(b.weight||0),0);
     return `
-      <div class="heat-history-card" onclick="showHeatDetail('${h.id}')">
+      <div class="heat-history-card">
+        <div style="display:flex;justify-content:flex-end;gap:6px;margin-bottom:4px;">
+          <button onclick="openEditHeatModal('${h.id}')" style="background:var(--surface2);border:1px solid var(--border);color:var(--amber);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">✏️ Edit</button>
+          <button onclick="deleteCompletedHeat('${h.id}')" style="background:var(--surface2);border:1px solid var(--border);color:var(--red);border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;">🗑 Delete</button>
+        </div>
         <div class="heat-history-header">
           <div>
             <div class="heat-history-num">Heat #${h.heatNumber}</div>
@@ -1989,8 +2019,19 @@ function renderHistory(){
 }
 
 function showHeatDetail(id){
-  // For now, navigate to stats — future: detail modal
   navigate('history');
+}
+function deleteCompletedHeat(id){
+  if(!confirm('Delete this completed heat record? This cannot be undone.')) return;
+  var db=getDB();
+  db.heats=db.heats.filter(function(h){return h.id!==id;});
+  db.hourlyLogs=db.hourlyLogs.filter(function(l){return l.heatId!==id;});
+  saveDB(db);
+  // Also delete from server
+  var url=getServerUrl();
+  if(url) fetch(url+'/heats/'+id,{method:'DELETE'}).catch(function(){});
+  syncToServer();
+  renderHistory();
 }
 
 // ═══════════════ MODAL HELPERS ═══════════════
