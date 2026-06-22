@@ -1045,20 +1045,50 @@ function renderReactorDetail(r){
   document.getElementById('reactor-detail-title').textContent = 'Reactor '+r;
 
   if(!heat){
+    // Check if there's a recently completed heat for this reactor
+    var recentComplete = db.heats.filter(function(h){return h.reactor===r&&h.status==='complete';})
+      .sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);})[0];
+
+    if(recentComplete){
+      // Show completed heat with edit option
+      document.getElementById('reactor-detail-sub').textContent = 'Heat #'+recentComplete.heatNumber+' · '+recentComplete.material;
+      document.getElementById('reactor-detail-chip').innerHTML = '<span class="status-chip chip-green">Complete</span>';
+      document.getElementById('reactor-phase-display').innerHTML =
+        '<div style="padding:20px 0;text-align:center">'
+        +'<div style="font-size:52px;margin-bottom:8px">✅</div>'
+        +'<div style="font-size:20px;font-weight:700;color:#22C55E">Heat Complete</div>'
+        +'<div style="font-size:14px;color:var(--muted);margin-top:6px">Heat #'+recentComplete.heatNumber+' finished</div>'
+        +'</div>';
+      document.getElementById('phase-timeline-card').style.display='';
+      document.getElementById('hourly-logs-card').style.display='';
+      document.getElementById('yield-card').style.display = recentComplete.yields ? '' : 'none';
+      document.getElementById('wa-card').style.display='none';
+      // Use the complete heat for timeline and logs
+      renderPhaseTimeline(recentComplete);
+      var completeLogs = db.hourlyLogs.filter(function(l){return l.heatId===recentComplete.id;});
+      renderHourlyLogsList(completeLogs);
+      if(recentComplete.yields) renderYieldCard(recentComplete);
+      document.getElementById('reactor-sticky-action').innerHTML =
+        '<button class="btn btn-ghost" style="margin-right:8px" onclick="openEditHeatModal(this.dataset.id)" data-id="'+recentComplete.id+'">✏️ Edit Heat</button>'
+        +'<button class="btn btn-red" onclick="openNewHeatModal('+r+')">🔴 Start New Heat</button>';
+      return;
+    }
+
+    // Truly no heat
     document.getElementById('reactor-detail-sub').textContent = 'No active heat';
     document.getElementById('reactor-detail-chip').innerHTML = '';
-    document.getElementById('reactor-phase-display').innerHTML = `
-      <div style="padding:30px 0">
-        <div style="font-size:48px;margin-bottom:12px">🔴</div>
-        <div style="font-size:20px;font-weight:700;color:var(--red)">Ready to Load</div>
-        <div style="font-size:14px;color:var(--muted);margin-top:6px">Start a new heat to begin</div>
-      </div>`;
+    document.getElementById('reactor-phase-display').innerHTML =
+      '<div style="padding:30px 0;text-align:center">'
+      +'<div style="font-size:48px;margin-bottom:12px">🔴</div>'
+      +'<div style="font-size:20px;font-weight:700;color:var(--red)">Ready to Load</div>'
+      +'<div style="font-size:14px;color:var(--muted);margin-top:6px">Start a new heat to begin</div>'
+      +'</div>';
     document.getElementById('phase-timeline-card').style.display='none';
     document.getElementById('hourly-logs-card').style.display='none';
     document.getElementById('yield-card').style.display='none';
     document.getElementById('wa-card').style.display='none';
-    document.getElementById('reactor-sticky-action').innerHTML = `
-      <button class="btn btn-red" onclick="openNewHeatModal(${r})">🔴 Start New Heat</button>`;
+    document.getElementById('reactor-sticky-action').innerHTML =
+      '<button class="btn btn-red" onclick="openNewHeatModal('+r+')">🔴 Start New Heat</button>';
     return;
   }
 
