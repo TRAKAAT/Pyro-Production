@@ -1085,7 +1085,7 @@ function renderReactorDetail(r){
   renderPhaseTimeline(heat);
 
   // Hourly logs
-  const logs = db.hourlyLogs.filter(l=>l.heatId===heat.id);
+  const logs = db.hourlyLogs.filter(l=>l.heatId===heat.id).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
   const logsCard = document.getElementById('hourly-logs-card');
   logsCard.style.display = (phase==='reaction'||logs.length>0) ? '' : 'none';
   renderHourlyLogsList(logs);
