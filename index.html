@@ -1116,7 +1116,7 @@ function renderReactorDetail(r){
     waCard.style.display='';
     var lastLog = logs[logs.length-1];
     renderWAPreview(heat, lastLog);
-    renderWAPhotoRow(lastLog.photos||[]);
+    renderWAPhotoRow(lastLog.photos||[], lastLog.id);
   } else {
     waCard.style.display='none';
   }
@@ -1550,8 +1550,14 @@ function submitHourlyLog(){
     photos:_logPhotos.map(function(p){return {type:p.type,dataUrl:p.dataUrl,isVideo:p.isVideo||false};}),
   };
   db.hourlyLogs.push(log);
+  // Cache photos in memory before saveDB strips dataUrls
+  if(log.photos && log.photos.length){
+    window._photoCache = window._photoCache || {};
+    window._photoCache[log.id] = _logPhotos.map(function(p){ return {type:p.type,dataUrl:p.dataUrl,isVideo:p.isVideo||false}; });
+    window._lastLogId = log.id;
+  }
   saveDB(db);
-  _logPhotos = [];  // clear photos after save
+  _logPhotos = [];
   closeModal('modal-hourly-log');
   renderReactorDetail(currentReactor);
   syncToServer();
@@ -2429,21 +2435,26 @@ function removeLogPhoto(i){
   _logPhotos.splice(i,1);
   renderLogPhotoThumbs();
 }
-function renderWAPhotoRow(photos){
+function renderWAPhotoRow(photos, logId){
   var el=document.getElementById('wa-photo-row');
   if(!el) return;
   el.innerHTML='';
-  var photoList = photos || [];
+  // Use cached photos (with dataUrls) if available
+  var cachedPhotos = logId && window._photoCache && window._photoCache[logId];
+  var photoList = cachedPhotos || photos || [];
   if(!photoList.length) return;
+  var hasRealData = photoList.some(function(p){ return p.dataUrl; });
+  if(!hasRealData) return; // only show if we have actual image data
   photoList.forEach(function(p){
+    if(!p.dataUrl) return;
     if(p.isVideo){
       var v=document.createElement('div');
-      v.style.cssText='width:80px;height:80px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;';
+      v.style.cssText='width:80px;height:80px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;border:2px solid var(--border);';
       v.textContent='🎬';el.appendChild(v);
     } else {
       var img=document.createElement('img');
       img.src=p.dataUrl;
-      img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;cursor:pointer;';
+      img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;cursor:pointer;border:2px solid var(--border);';
       img.onclick=function(){ window.open(p.dataUrl,'_blank'); };
       el.appendChild(img);
     }
@@ -2451,9 +2462,45 @@ function renderWAPhotoRow(photos){
 }
 
 // ════════════ WA SHARE ════════════
-function shareWAMessage(){
+async function shareWAMessage(){
   if(!window._waMessage){ alert('No message to share yet. Submit an hourly log first.'); return; }
-  var encoded=encodeURIComponent(window._waMessage);
+
+  // Get cached photos for last log
+  var photos = [];
+  if(window._lastLogId && window._photoCache && window._photoCache[window._lastLogId]){
+    photos = window._photoCache[window._lastLogId].filter(function(p){ return p.dataUrl && !p.isVideo; });
+  }
+
+  // Try Native Share API (works on Android/iOS Chrome/Safari over HTTPS)
+  if(navigator.share && photos.length > 0){
+    try {
+      // Convert dataUrls to File objects
+      var files = await Promise.all(photos.map(function(p, i){
+        return fetch(p.dataUrl)
+          .then(function(r){ return r.blob(); })
+          .then(function(blob){ return new File([blob], 'photo_'+(p.type||i)+'.jpg', {type:'image/jpeg'}); });
+      }));
+      // Check if browser can share files
+      if(navigator.canShare && navigator.canShare({files:files, text:window._waMessage})){
+        await navigator.share({ files:files, text:window._waMessage });
+        return;
+      }
+    } catch(e){
+      // Fall through to text-only share
+      console.log('File share failed, trying text only:', e.message);
+    }
+  }
+
+  // Fallback: text-only via wa.me (photos already in camera roll if taken with camera)
+  if(navigator.share){
+    try {
+      await navigator.share({ text: window._waMessage });
+      return;
+    } catch(e){ /* user cancelled or not supported */ }
+  }
+
+  // Final fallback: open wa.me link
+  var encoded = encodeURIComponent(window._waMessage);
   window.open('https://wa.me/?text='+encoded,'_blank');
 }
 
