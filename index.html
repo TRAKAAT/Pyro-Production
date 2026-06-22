@@ -566,7 +566,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
 <!-- Hourly Log Modal -->
 <div class="modal-overlay" id="modal-hourly-log" style="flex-direction:column;justify-content:flex-end;">
-  <div class="modal-sheet" style="border-radius:20px 20px 0 0;padding-bottom:90px;">
+  <div class="modal-sheet">
     <div class="modal-handle"></div>
     <div class="modal-title">Hourly Log Entry</div>
     <div class="temp-display">
@@ -612,10 +612,10 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
     <div id="log-submit-error" style="display:none;color:#ff6b6b;font-size:14px;font-weight:700;text-align:center;padding:8px;background:rgba(255,0,0,0.1);border-radius:8px;margin-top:8px;"></div>
   </div>
-  <!-- Action bar — rendered as last child of overlay, fixed positioning via JS -->
-  <div id="log-action-bar" style="width:100%;background:var(--surface);border-top:1px solid var(--border);padding:12px 16px 32px;display:flex;gap:10px;position:fixed;bottom:0;left:0;right:0;z-index:9999;">
-    <button class="btn btn-ghost" style="flex:1;font-size:16px;font-weight:700;" onclick="closeModal('modal-hourly-log')">Cancel</button>
-    <button class="btn btn-orange" style="flex:1;font-size:16px;font-weight:700;" onclick="submitHourlyLog()">Submit Log</button>
+    <div style="display:flex;gap:10px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+      <button class="btn btn-ghost" style="flex:1;font-size:16px;font-weight:700;" onclick="closeModal('modal-hourly-log')">Cancel</button>
+      <button class="btn btn-orange" style="flex:1;font-size:16px;font-weight:700;" onclick="submitHourlyLog()">Submit Log</button>
+    </div>
   </div>
 </div>
 
@@ -1104,7 +1104,9 @@ function renderReactorDetail(r){
   const waCard = document.getElementById('wa-card');
   if(phase==='reaction' && logs.length>0){
     waCard.style.display='';
-    renderWAPreview(heat, logs[logs.length-1]);
+    var lastLog = logs[logs.length-1];
+    renderWAPreview(heat, lastLog);
+    renderWAPhotoRow(lastLog.photos||[]);
   } else {
     waCard.style.display='none';
   }
@@ -1448,7 +1450,6 @@ function openHourlyLogModal(){
   document.getElementById('log-cond-low').style.color='var(--text)';
   var errEl=document.getElementById('log-submit-error'); if(errEl) errEl.style.display='none';
   document.getElementById('modal-hourly-log').classList.add('open');
-  var bar=document.getElementById('log-action-bar'); if(bar) bar.style.display='flex';
 }
 
 function updateTempDisplay(v){ document.getElementById('log-temp-display').textContent=v; document.getElementById('log-temp-input').value=v; }
@@ -1469,6 +1470,10 @@ function setCondenser(v){
 }
 
 function submitHourlyLog(){
+  // DIAGNOSTIC — change page title so we know function ran
+  document.title = 'SUBMIT CALLED ' + Date.now();
+  var errEl = document.getElementById('log-submit-error');
+  try {
   // Read temp from typed input first, then slider
   var tempInput = document.getElementById('log-temp-input');
   var tempSlider = document.getElementById('log-temp-slider');
@@ -1501,9 +1506,15 @@ function submitHourlyLog(){
   };
   db.hourlyLogs.push(log);
   saveDB(db);
+  _logPhotos = [];  // clear photos after save
   closeModal('modal-hourly-log');
   renderReactorDetail(currentReactor);
   syncToServer();
+  document.title = 'GeT Energy';
+  } catch(e) {
+    if(errEl) { errEl.textContent = 'ERROR: ' + e.message; errEl.style.display='block'; }
+    document.title = 'ERR: ' + e.message;
+  }
 }
 
 // ═══════════════ END OF RUN ═══════════════
@@ -1983,13 +1994,13 @@ function showHeatDetail(id){
 }
 
 // ═══════════════ MODAL HELPERS ═══════════════
-function closeModal(id){ document.getElementById(id).classList.remove('open'); if(id==='modal-hourly-log'){var bar=document.getElementById('log-action-bar');if(bar)bar.style.display='none';} }
+function closeModal(id){ var el=document.getElementById(id); if(el) el.classList.remove('open'); }
 var _cameraActive = false;
 var _cameraReturnAt = 0;
 document.querySelectorAll('.modal-overlay').forEach(function(m){
   m.addEventListener('click', function(e){
-    // Don't close if we just returned from the camera (300ms grace window)
-    if(_cameraActive || Date.now() - _cameraReturnAt < 600) return;
+    // Don't close hourly log modal on outside click — user may have just returned from camera
+    if(this.id === 'modal-hourly-log') return;
     if(e.target===this) closeModal(this.id);
   });
 });
@@ -2326,7 +2337,7 @@ function handleLogPhoto(event){
   var reader=new FileReader();
   reader.onload=function(e){
     _logPhotos.push({type:_logPhotoType,dataUrl:e.target.result,name:file.name,isVideo:file.type.startsWith('video/')});
-    renderLogPhotoThumbs();
+    renderLogPhotoThumbs(); // don't update WA row until log is saved
     // Ensure the hourly log modal is still open
     var modal=document.getElementById('modal-hourly-log');
     if(modal && !modal.classList.contains('open')){
@@ -2352,23 +2363,29 @@ function renderLogPhotoThumbs(){
     wrap.innerHTML+='<button onclick="removeLogPhoto('+i+')" style="position:absolute;top:2px;right:2px;background:rgba(0,0,0,0.6);border:none;color:white;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;padding:0;line-height:1;">×</button>';
     el.appendChild(wrap);
   });
-  // Update WA photo row if visible
-  renderWAPhotoRow();
+  // WA photo row updated only when log is saved
 }
 function removeLogPhoto(i){
   _logPhotos.splice(i,1);
   renderLogPhotoThumbs();
 }
-function renderWAPhotoRow(){
+function renderWAPhotoRow(photos){
   var el=document.getElementById('wa-photo-row');
   if(!el) return;
   el.innerHTML='';
-  if(!_logPhotos.length) return;
-  _logPhotos.forEach(function(p){
+  var photoList = photos || [];
+  if(!photoList.length) return;
+  photoList.forEach(function(p){
     if(p.isVideo){
-      var v=document.createElement('div');v.style.cssText='width:60px;height:60px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:20px;';v.textContent='🎬';el.appendChild(v);
+      var v=document.createElement('div');
+      v.style.cssText='width:80px;height:80px;background:var(--surface2);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;';
+      v.textContent='🎬';el.appendChild(v);
     } else {
-      var img=document.createElement('img');img.src=p.dataUrl;img.style.cssText='width:60px;height:60px;object-fit:cover;border-radius:8px;';el.appendChild(img);
+      var img=document.createElement('img');
+      img.src=p.dataUrl;
+      img.style.cssText='width:80px;height:80px;object-fit:cover;border-radius:8px;flex-shrink:0;cursor:pointer;';
+      img.onclick=function(){ window.open(p.dataUrl,'_blank'); };
+      el.appendChild(img);
     }
   });
 }
