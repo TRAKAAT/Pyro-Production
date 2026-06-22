@@ -1069,8 +1069,11 @@ function renderReactorDetail(r){
       renderHourlyLogsList(completeLogs);
       if(recentComplete.yields) renderYieldCard(recentComplete);
       document.getElementById('reactor-sticky-action').innerHTML =
-        '<button class="btn btn-ghost" style="margin-right:8px" onclick="openEditHeatModal(this.dataset.id)" data-id="'+recentComplete.id+'">✏️ Edit Heat</button>'
-        +'<button class="btn btn-red" onclick="openNewHeatModal('+r+')">🔴 Start New Heat</button>';
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;">'
+        +'<button class="btn btn-ghost" style="flex:1" onclick="openEditHeatModal(this.dataset.id)" data-id="'+recentComplete.id+'">✏️ Edit Heat</button>'
+        +'<button class="btn btn-amber" style="flex:1" onclick="reopenHeat(this.dataset.id)" data-id="'+recentComplete.id+'">\u21a9 Reopen Heat</button>'
+        +'<button class="btn btn-red" style="flex:1" onclick="openNewHeatModal('+r+')">🔴 Start New Heat</button>'
+        +'</div>';
       return;
     }
 
@@ -1490,6 +1493,40 @@ function confirmPhaseAndShare(share){
     }, 300);
   }
   renderReactorDetail(currentReactor);
+}
+
+// Reopen a completed heat — sets status back to last phase that has no end time
+// or to deslag if all phases are complete (meaning it was marked complete prematurely)
+function reopenHeat(heatId){
+  if(!confirm('Reopen this heat and continue the process from where it left off?')) return;
+  var db=getDB();
+  var heat=db.heats.find(function(h){return h.id===heatId;});
+  if(!heat) return;
+  // Find the last phase that was actually started
+  var lastStarted = null;
+  PHASES.forEach(function(p){
+    if(heat.phases[p] && heat.phases[p].startTime) lastStarted = p;
+  });
+  if(!lastStarted){ alert('No phase data found to reopen from.'); return; }
+  var lastPh = heat.phases[lastStarted];
+  // If last started phase has an end time, reopen means starting the next phase
+  if(lastPh.endTime){
+    var nextIdx = PHASES.indexOf(lastStarted)+1;
+    if(nextIdx < PHASES.length){
+      var nextP = PHASES[nextIdx];
+      if(!heat.phases[nextP]) heat.phases[nextP]={startTime:lastPh.endTime, endTime:null};
+      heat.status = nextP;
+    } else {
+      // All phases done — reopen deslag
+      heat.phases.deslag.endTime = null;
+      heat.status = 'deslag';
+    }
+  } else {
+    heat.status = lastStarted;
+  }
+  heat.yields = null; // clear premature yields
+  db.heats=db.heats.map(function(h){return h.id===heat.id?heat:h;});
+  saveDB(db); syncToServer(); renderReactorDetail(currentReactor);
 }
 
 // Opens edit for current reactor's heat (active or most recent complete)
