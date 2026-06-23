@@ -2661,12 +2661,26 @@ function renderTempGraph(logs){
   const GH=140; // graph area height
   const TOTAL_H=TPAD+GH+BPAD;
 
-  // Compute points in graph coordinate space
+  // X positions — evenly spaced by index, NOT by real time
+  // This prevents compression when reaction has many hourly readings but cooldown has few
   const pts=temps.map(function(t,i){
     var x=LPAD+i*(W-LPAD-RPAD)/(Math.max(temps.length-1,1));
     var y=TPAD+GH*(1-(t-minT)/range);
     return {x:x,y:y,t:t};
   });
+
+  // Determine phase for each point (for colouring)
+  var rxStart2 = null, cdStart2 = null;
+  // Get from DB if available
+  try {
+    var db2=getDB();
+    var h2=db2.heats.find(function(h){return h.reactor===currentReactor&&(h.status!=='complete'||true);});
+    if(!h2) h2=db2.heats.filter(function(h){return h.reactor===currentReactor;}).sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);})[0];
+    if(h2){
+      if(h2.phases&&h2.phases.reaction&&h2.phases.reaction.startTime) rxStart2=new Date(h2.phases.reaction.startTime).getTime();
+      if(h2.phases&&h2.phases.cooldown&&h2.phases.cooldown.startTime) cdStart2=new Date(h2.phases.cooldown.startTime).getTime();
+    }
+  } catch(e){}
 
   var svg='<svg viewBox="0 0 '+W+' '+TOTAL_H+'" width="'+W+'px" height="'+TOTAL_H+'px" style="display:block;min-width:'+W+'px">';
 
@@ -2693,14 +2707,15 @@ function renderTempGraph(logs){
   // Line
   svg+='<polyline points="'+pts.map(function(p){return p.x+','+p.y;}).join(' ')+'" fill="none" stroke="#EA580C" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>';
 
-  // Dots, temp labels, time labels
+  // Dots, temp labels, time labels — colour by phase
   pts.forEach(function(p,i){
-    // Dot
-    svg+='<circle cx="'+p.x+'" cy="'+p.y+'" r="4.5" fill="#EA580C" stroke="#0D0F14" stroke-width="1.5"/>';
-    // Temp label — above dot, avoid clipping at top
+    var t2=times[i].getTime();
+    var dotCol='#F59E0B';
+    if(cdStart2&&t2>=cdStart2) dotCol='#3B82F6';
+    else if(rxStart2&&t2>=rxStart2) dotCol='#EA580C';
+    svg+='<circle cx="'+p.x+'" cy="'+p.y+'" r="5" fill="'+dotCol+'" stroke="#0D0F14" stroke-width="1.5"/>';
     var labelY=Math.max(p.y-10, TPAD+10);
     svg+='<text x="'+p.x+'" y="'+labelY+'" fill="white" font-size="10" font-weight="bold" text-anchor="middle">'+p.t+'°</text>';
-    // Time label below graph
     var tStr=times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
     svg+='<text x="'+p.x+'" y="'+(TPAD+GH+18)+'" fill="rgba(255,255,255,0.45)" font-size="9" text-anchor="middle">'+tStr+'</text>';
   });
@@ -3373,144 +3388,198 @@ async function shareTempGraph(){
   var logs = _hdLogs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(!logs.length){ alert('No temperature data to share'); return; }
   var heat = _hdHeat;
-  var W=600, H=360;
-  var tempCanvas = document.createElement('canvas');
-  tempCanvas.width=W; tempCanvas.height=H;
-  var ctx=tempCanvas.getContext('2d');
 
-  // Background
-  ctx.fillStyle='#0D0F14'; ctx.fillRect(0,0,W,H);
+  // Canvas dimensions — tall enough for good readability on WhatsApp
+  var W=600, H=420;
+  var tc = document.createElement('canvas');
+  tc.width=W; tc.height=H;
+  var ctx=tc.getContext('2d');
+
+  // ── Background ──────────────────────────────────────────────────────────────
+  var bgGrad=ctx.createLinearGradient(0,0,0,H);
+  bgGrad.addColorStop(0,'#0D1520'); bgGrad.addColorStop(1,'#0D0F14');
+  ctx.fillStyle=bgGrad; ctx.fillRect(0,0,W,H);
+
+  // Gold top bar
   var barG=ctx.createLinearGradient(0,0,W,0);
   barG.addColorStop(0,'#F59E0B'); barG.addColorStop(1,'#EA580C');
   ctx.fillStyle=barG; ctx.fillRect(0,0,W,5);
 
-  // Header
-  ctx.fillStyle='#F59E0B'; ctx.font='bold 15px Arial'; ctx.fillText('GeT Energy — Temperature Profile',18,26);
-  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='12px Arial';
-  ctx.fillText('Heat #'+heat.heatNumber+' · Reactor '+heat.reactor,18,44);
+  // ── Header ───────────────────────────────────────────────────────────────────
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 16px Arial';
+  ctx.fillText('GeT Energy — Temperature Profile',18,28);
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='12px Arial';
+  ctx.fillText('Heat #'+heat.heatNumber+' · Reactor '+heat.reactor+' · '+(heat.material||''),18,46);
+
+  // ── Graph area ───────────────────────────────────────────────────────────────
+  var LPAD=50, RPAD=20, TPAD=62, BPAD=80;
+  var GW=W-LPAD-RPAD, GH=H-TPAD-BPAD;
+  var baseY=TPAD+GH;
 
   var temps=logs.map(function(l){return l.temp;});
   var times=logs.map(function(l){return new Date(l.timestamp);});
-  var maxT=Math.max.apply(null,temps), minT=Math.min.apply(null,temps);
+  var n=temps.length;
+  var maxT=Math.max.apply(null,temps);
+  var minT=Math.min.apply(null,[0].concat(temps)); // include 0 baseline
   var range=Math.max(maxT-minT,1);
-  var LPAD=46, RPAD=16, TPAD=58, GH=200, BPAD=28;
-  var GW=W-LPAD-RPAD;
-  var baseY=TPAD+GH;
 
-  // Phase start/end times from heat
-  var rxStart = heat.phases&&heat.phases.reaction&&heat.phases.reaction.startTime ? new Date(heat.phases.reaction.startTime) : null;
-  var rxEnd   = heat.phases&&heat.phases.reaction&&heat.phases.reaction.endTime   ? new Date(heat.phases.reaction.endTime)   : null;
-  var cdStart = heat.phases&&heat.phases.cooldown&&heat.phases.cooldown.startTime ? new Date(heat.phases.cooldown.startTime) : null;
-  var cdEnd   = heat.phases&&heat.phases.cooldown&&heat.phases.cooldown.endTime   ? new Date(heat.phases.cooldown.endTime)   : null;
+  // X positions — EVENLY SPACED by index (not real time)
+  // This avoids compression of clustered reaction readings vs lone cooldown reading
+  function px(i){ return LPAD + i*(GW/(Math.max(n-1,1))); }
+  function py(t){ return TPAD + GH*(1-(t-minT)/range); }
 
-  // Map timestamp to X coordinate
-  var t0=times[0].getTime(), t1=times[times.length-1].getTime(), tRange=Math.max(t1-t0,1);
-  function tx(d){ return LPAD+((d.getTime()-t0)/tRange)*GW; }
-  function ty(t){ return TPAD+GH*(1-(t-minT)/range); }
+  // Find which phase each log belongs to
+  var rxStart = heat.phases&&heat.phases.reaction&&heat.phases.reaction.startTime ? new Date(heat.phases.reaction.startTime).getTime() : null;
+  var rxEnd   = heat.phases&&heat.phases.reaction&&heat.phases.reaction.endTime   ? new Date(heat.phases.reaction.endTime).getTime()   : null;
+  var cdStart = heat.phases&&heat.phases.cooldown&&heat.phases.cooldown.startTime ? new Date(heat.phases.cooldown.startTime).getTime() : null;
 
-  var pts=logs.map(function(l){ return {x:tx(new Date(l.timestamp)),y:ty(l.temp),t:l.temp}; });
+  function phaseOf(i){
+    var t=times[i].getTime();
+    if(cdStart&&t>=cdStart) return 'cooldown';
+    if(rxStart&&t>=rxStart) return 'reaction';
+    return 'pre';
+  }
 
-  // Grid lines + Y labels
-  [0,0.25,0.5,0.75,1].forEach(function(f){
-    var y=TPAD+GH*f;
-    var temp=Math.round(maxT-range*f);
-    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(LPAD,y); ctx.lineTo(W-RPAD,y); ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='10px Arial'; ctx.textAlign='right';
-    ctx.fillText(temp+'°',LPAD-4,y+4);
+  // ── Phase background bands ───────────────────────────────────────────────────
+  // Find index boundaries
+  var rxStartIdx=-1, cdStartIdx=-1;
+  logs.forEach(function(l,i){
+    var t=times[i].getTime();
+    if(rxStart&&t>=rxStart&&rxStartIdx===-1) rxStartIdx=i;
+    if(cdStart&&t>=cdStart&&cdStartIdx===-1) cdStartIdx=i;
   });
-  ctx.textAlign='left';
 
-  // Phase background bands (only where we have logs)
-  function drawPhaseBand(startTime, endTime, color, opacity){
-    if(!startTime) return;
-    var x1=tx(startTime);
-    var x2=endTime?tx(endTime):W-RPAD;
-    x1=Math.max(x1,LPAD); x2=Math.min(x2,W-RPAD);
-    if(x2<=x1) return;
-    ctx.fillStyle=color; ctx.globalAlpha=opacity;
+  function fillBand(i1,i2,color,alpha){
+    if(i1<0||i1>=n) return;
+    var x1=px(i1), x2=i2<n?px(i2):LPAD+GW;
+    ctx.fillStyle=color; ctx.globalAlpha=alpha;
     ctx.fillRect(x1,TPAD,x2-x1,GH);
     ctx.globalAlpha=1;
   }
-  drawPhaseBand(rxStart,rxEnd,'#EA580C',0.08);
-  drawPhaseBand(cdStart,cdEnd,'#3B82F6',0.08);
+  if(rxStartIdx>=0) fillBand(rxStartIdx, cdStartIdx>=0?cdStartIdx:n,'#EA580C',0.10);
+  if(cdStartIdx>=0) fillBand(cdStartIdx, n,'#3B82F6',0.10);
 
-  // Phase divider lines
-  function drawPhaseLine(time, color, label){
-    if(!time) return;
-    var x=tx(time);
-    if(x<LPAD||x>W-RPAD) return;
-    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.moveTo(x,TPAD); ctx.lineTo(x,baseY); ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle=color; ctx.font='bold 9px Arial'; ctx.textAlign='center';
-    ctx.fillText(label,x,TPAD-4);
-  }
-  drawPhaseLine(rxStart,'#EA580C','Reaction start');
-  drawPhaseLine(cdStart,'#3B82F6','Cooldown start');
+  // ── Grid lines ───────────────────────────────────────────────────────────────
+  var gridTemps=[];
+  var step = range<=100?20:range<=300?50:100;
+  for(var gt=Math.ceil(minT/step)*step; gt<=maxT; gt+=step) gridTemps.push(gt);
+  gridTemps.forEach(function(gt){
+    var y=py(gt);
+    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(LPAD,y); ctx.lineTo(LPAD+GW,y); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Arial'; ctx.textAlign='right';
+    ctx.fillText(gt+'°',LPAD-5,y+4);
+  });
   ctx.textAlign='left';
 
-  // Gradient fill under line — use a single neutral gradient, bands handle colouring
+  // ── Phase divider lines ──────────────────────────────────────────────────────
+  function divider(idx,col,label){
+    if(idx<0||idx>=n) return;
+    var x=px(idx);
+    ctx.save();
+    ctx.strokeStyle=col; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(x,TPAD); ctx.lineTo(x,baseY); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle=col; ctx.font='bold 10px Arial'; ctx.textAlign='center';
+    ctx.fillText(label,x,TPAD-6);
+  }
+  divider(rxStartIdx,'rgba(234,88,12,0.8)','▼ Reaction');
+  divider(cdStartIdx,'rgba(59,130,246,0.8)','▼ Cooldown');
+  ctx.textAlign='left';
+
+  // ── Gradient fill under line ─────────────────────────────────────────────────
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(pts[0].x,pts[0].y);
-  pts.slice(1).forEach(function(p){ctx.lineTo(p.x,p.y);});
-  ctx.lineTo(pts[pts.length-1].x,baseY);
-  ctx.lineTo(pts[0].x,baseY);
-  ctx.closePath();
+  ctx.moveTo(px(0),py(temps[0]));
+  for(var i=1;i<n;i++) ctx.lineTo(px(i),py(temps[i]));
+  ctx.lineTo(px(n-1),baseY); ctx.lineTo(px(0),baseY); ctx.closePath();
   var fillG=ctx.createLinearGradient(0,TPAD,0,baseY);
-  fillG.addColorStop(0,'rgba(234,88,12,0.3)'); fillG.addColorStop(1,'rgba(234,88,12,0)');
+  fillG.addColorStop(0,'rgba(234,88,12,0.5)'); fillG.addColorStop(0.6,'rgba(234,88,12,0.1)'); fillG.addColorStop(1,'rgba(234,88,12,0)');
   ctx.fillStyle=fillG; ctx.fill();
   ctx.restore();
 
-  // Main line
-  ctx.strokeStyle='#EA580C'; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
-  pts.slice(1).forEach(function(p){ctx.lineTo(p.x,p.y);});
+  // ── Smooth line ──────────────────────────────────────────────────────────────
+  ctx.strokeStyle='#EA580C'; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(px(0),py(temps[0]));
+  for(var i=1;i<n;i++) ctx.lineTo(px(i),py(temps[i]));
   ctx.stroke();
 
-  // Dots + temp labels
-  pts.forEach(function(p,i){
-    // Colour dot by phase
-    var t=times[i].getTime();
-    var dotCol='#F59E0B';
-    if(rxStart&&cdStart&&t>=cdStart.getTime()) dotCol='#3B82F6';
-    else if(rxStart&&t>=rxStart.getTime()) dotCol='#EA580C';
-    ctx.fillStyle=dotCol; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill();
-    ctx.strokeStyle='#0D0F14'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.stroke();
-    // Temp label
-    ctx.fillStyle='white'; ctx.font='bold 10px Arial'; ctx.textAlign='center';
-    ctx.fillText(p.t+'°',p.x,p.y-11);
-    // Time label
-    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='9px Arial';
-    ctx.fillText(times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),p.x,baseY+16);
+  // ── Dots + labels ────────────────────────────────────────────────────────────
+  // Only label every dot if few readings; skip alternate labels if crowded
+  var labelEvery = n<=10?1:n<=20?2:3;
+  for(var i=0;i<n;i++){
+    var x=px(i), y=py(temps[i]);
+    var ph=phaseOf(i);
+    var dotCol = ph==='cooldown'?'#3B82F6':ph==='reaction'?'#EA580C':'#F59E0B';
+
+    // Dot with dark border
+    ctx.fillStyle='#0D0F14'; ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=dotCol; ctx.beginPath(); ctx.arc(x,y,4.5,0,Math.PI*2); ctx.fill();
+
+    // Temp label above dot
+    if(i%labelEvery===0){
+      ctx.fillStyle='white'; ctx.font='bold 11px Arial'; ctx.textAlign='center';
+      var labelY=Math.max(y-12,TPAD+12);
+      ctx.fillText(temps[i]+'°',x,labelY);
+    }
+  }
+  ctx.textAlign='left';
+
+  // ── X axis time labels ────────────────────────────────────────────────────────
+  // Show time label for first, last, and phase boundaries; skip crowded ones
+  var showLabels=new Set([0,n-1]);
+  if(rxStartIdx>=0) showLabels.add(rxStartIdx);
+  if(cdStartIdx>=0) showLabels.add(cdStartIdx);
+  // Also show evenly if space allows
+  var maxXLabels=8;
+  var step2=Math.max(1,Math.floor(n/maxXLabels));
+  for(var i=0;i<n;i+=step2) showLabels.add(i);
+  showLabels.forEach(function(i){
+    if(i<0||i>=n) return;
+    var x=px(i);
+    ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='10px Arial'; ctx.textAlign='center';
+    ctx.fillText(times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),x,baseY+16);
+    // Tick
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(x,baseY); ctx.lineTo(x,baseY+5); ctx.stroke();
   });
   ctx.textAlign='left';
 
-  // Stats + legend row
-  var firstT=temps[0], lastT=temps[temps.length-1];
-  var statsY=baseY+34;
-  ctx.fillStyle='#EA580C'; ctx.font='bold 12px Arial'; ctx.fillText('Peak: '+maxT+'°C',LPAD,statsY);
-  ctx.fillStyle='#F59E0B'; ctx.fillText('Start: '+firstT+'°C',LPAD+130,statsY);
-  ctx.fillStyle='#3B82F6'; ctx.fillText('Final: '+lastT+'°C',LPAD+260,statsY);
+  // ── Stats row ─────────────────────────────────────────────────────────────────
+  var statsY=baseY+32;
+  var firstT=temps[0], lastT=temps[n-1];
 
-  // Phase legend
+  // Peak marker
+  var peakIdx=temps.indexOf(maxT);
+  var peakX=px(peakIdx), peakY=py(maxT);
+  ctx.fillStyle='rgba(234,88,12,0.3)'; ctx.beginPath(); ctx.arc(peakX,peakY,12,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='#EA580C'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(peakX,peakY,12,0,Math.PI*2); ctx.stroke();
+
+  ctx.fillStyle='#EA580C'; ctx.font='bold 13px Arial'; ctx.fillText('Peak: '+maxT+'°C',LPAD,statsY);
+  ctx.fillStyle='#F59E0B'; ctx.fillText('Start: '+firstT+'°C',LPAD+150,statsY);
+  ctx.fillStyle='#3B82F6'; ctx.fillText('Final: '+lastT+'°C',LPAD+290,statsY);
+  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='12px Arial'; ctx.fillText(n+' readings',LPAD+420,statsY);
+
+  // ── Phase legend ──────────────────────────────────────────────────────────────
   var legY=statsY+22;
-  [[rxStart,'#EA580C','Reaction'],[cdStart,'#3B82F6','Cooldown']].forEach(function(leg,i){
-    if(!leg[0]) return;
-    ctx.fillStyle=leg[1]; ctx.fillRect(LPAD+i*150,legY-10,14,10);
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='10px Arial';
-    ctx.fillText(leg[2],LPAD+i*150+18,legY);
+  var legends=[['#EA580C','Reaction zone'],['#3B82F6','Cooldown zone']];
+  legends.forEach(function(l,i){
+    var lx=LPAD+i*160;
+    ctx.fillStyle=l[0]; ctx.globalAlpha=0.85;
+    ctx.beginPath(); ctx.roundRect(lx,legY-11,16,12,3); ctx.fill();
+    ctx.globalAlpha=1;
+    ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='11px Arial';
+    ctx.fillText(l[1],lx+20,legY);
   });
 
-  // Footer
+  // ── Footer ────────────────────────────────────────────────────────────────────
   ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='10px Arial';
   ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',LPAD,H-10);
   ctx.fillStyle='rgba(245,158,11,0.4)'; ctx.textAlign='right';
   ctx.fillText('pyro-production.wynanddp.workers.dev',W-RPAD,H-10);
   ctx.textAlign='left';
 
-  shareCanvasDirect(tempCanvas);
+  shareCanvasDirect(tc);
 }
 
 function renderHeatCard(heat, cbKg, totalMs){
