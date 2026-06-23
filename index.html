@@ -1053,12 +1053,23 @@ function renderReactorDetail(r){
       // Show completed heat with edit option
       document.getElementById('reactor-detail-sub').textContent = 'Heat #'+recentComplete.heatNumber+' · '+recentComplete.material;
       document.getElementById('reactor-detail-chip').innerHTML = '<span class="status-chip chip-green">Complete</span>';
-      document.getElementById('reactor-phase-display').innerHTML =
+      // Build complete heat buttons using DOM to avoid quote issues
+      var phaseEl2 = document.getElementById('reactor-phase-display');
+      phaseEl2.innerHTML =
         '<div style="padding:20px 0;text-align:center">'
         +'<div style="font-size:52px;margin-bottom:8px">✅</div>'
         +'<div style="font-size:20px;font-weight:700;color:#22C55E">Heat Complete</div>'
         +'<div style="font-size:14px;color:var(--muted);margin-top:6px">Heat #'+recentComplete.heatNumber+' finished</div>'
+        +'<div id="complete-heat-btns" style="display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap;"></div>'
         +'</div>';
+      var btnDiv = document.getElementById('complete-heat-btns');
+      var editBtn = document.createElement('button'); editBtn.className='btn btn-ghost'; editBtn.style.minWidth='120px'; editBtn.textContent='✏️ Edit Heat';
+      (function(id){ editBtn.onclick=function(){ openEditHeatModal(id); }; })(recentComplete.id);
+      var reopenBtn = document.createElement('button'); reopenBtn.className='btn btn-amber'; reopenBtn.style.minWidth='120px'; reopenBtn.textContent='↩ Reopen Heat';
+      (function(id){ reopenBtn.onclick=function(){ reopenHeat(id); }; })(recentComplete.id);
+      var newBtn = document.createElement('button'); newBtn.className='btn btn-red'; newBtn.style.minWidth='120px'; newBtn.textContent='🔴 New Heat';
+      (function(reactor){ newBtn.onclick=function(){ openNewHeatModal(reactor); }; })(r);
+      btnDiv.appendChild(editBtn); btnDiv.appendChild(reopenBtn); btnDiv.appendChild(newBtn);
       document.getElementById('phase-timeline-card').style.display='';
       document.getElementById('hourly-logs-card').style.display='';
       document.getElementById('yield-card').style.display = recentComplete.yields ? '' : 'none';
