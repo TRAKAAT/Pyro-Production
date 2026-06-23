@@ -1134,6 +1134,17 @@ function renderReactorDetail(r){
       <div style="font-size:52px;margin-bottom:8px">✅</div>
       <div style="font-size:20px;font-weight:700;color:var(--green)">Heat Complete</div>
       <div style="font-size:14px;color:var(--muted);margin-top:6px">Heat #${heat.heatNumber} finished</div>`;
+    // Add action buttons via DOM to avoid quote issues
+    var completeActions = document.createElement('div');
+    completeActions.style.cssText = 'display:flex;gap:8px;justify-content:center;margin-top:20px;flex-wrap:wrap;';
+    var editB = document.createElement('button'); editB.className='btn btn-ghost'; editB.style.minWidth='120px'; editB.textContent='✏️ Edit Heat';
+    editB.onclick = function(){ openEditHeatModal(heat.id); };
+    var reopenB = document.createElement('button'); reopenB.className='btn btn-amber'; reopenB.style.minWidth='120px'; reopenB.textContent='↩ Reopen Heat';
+    reopenB.onclick = function(){ reopenHeat(heat.id); };
+    var newB = document.createElement('button'); newB.className='btn btn-red'; newB.style.minWidth='120px'; newB.textContent='🔴 New Heat';
+    newB.onclick = function(){ openNewHeatModal(r); };
+    completeActions.appendChild(editB); completeActions.appendChild(reopenB); completeActions.appendChild(newB);
+    phaseEl.appendChild(completeActions);
   }
 
   // Phase timeline
