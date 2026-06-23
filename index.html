@@ -3268,25 +3268,43 @@ function renderPhasesCanvas(heat, totalMs){
   var canvas = document.getElementById('hd-phases-canvas');
   if(!canvas) return;
   var phaseList = PHASES.filter(function(p){return heat.phases&&heat.phases[p]&&heat.phases[p].startTime;});
-  var ROW_H=36, HDR_H=70, FOOTER_H=30;
-  var W=540, H=HDR_H+(phaseList.length+1)*ROW_H+FOOTER_H;
+  // Bigger rows for WhatsApp readability
+  var ROW_H=52, HDR_H=80, COL_H=28, FOOTER_H=36;
+  var W=600, H=HDR_H+COL_H+phaseList.length*ROW_H+ROW_H+FOOTER_H;
   canvas.width=W; canvas.height=H;
   var ctx=canvas.getContext('2d');
+
+  // Background
   ctx.fillStyle='#0D0F14'; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#F59E0B'; ctx.fillRect(0,0,W,4);
+  // Top accent bar
+  var barG=ctx.createLinearGradient(0,0,W,0);
+  barG.addColorStop(0,'#F59E0B'); barG.addColorStop(1,'#EA580C');
+  ctx.fillStyle=barG; ctx.fillRect(0,0,W,5);
 
   // Header
-  ctx.fillStyle='#F59E0B'; ctx.font='bold 14px Arial'; ctx.fillText('GeT Energy — Phase Breakdown',16,24);
-  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='11px Arial';
-  ctx.fillText('Heat #'+heat.heatNumber+' · Reactor '+heat.reactor+' · '+heat.material,16,40);
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 17px Arial';
+  ctx.fillText('GeT Energy — Phase Breakdown',18,30);
+  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='13px Arial';
+  ctx.fillText('Heat #'+heat.heatNumber+' · Reactor '+heat.reactor+' · '+heat.material,18,50);
+  var dateStr = heat.createdAt?new Date(heat.createdAt).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}):'';
+  ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px Arial';
+  ctx.fillText(dateStr,18,66);
 
-  // Column headers
-  var y=HDR_H;
-  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(0,y-20,W,20);
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 9px Arial';
-  ctx.fillText('PHASE',16,y-7); ctx.textAlign='center';
-  ctx.fillText('START',270,y-7); ctx.fillText('FINISH',340,y-7);
-  ctx.textAlign='right'; ctx.fillText('HRS',430,y-7); ctx.fillText('%',510,y-7);
+  // Column header row
+  var colY=HDR_H+COL_H;
+  ctx.fillStyle='#1E2330'; ctx.fillRect(0,HDR_H,W,COL_H);
+  ctx.strokeStyle='rgba(245,158,11,0.3)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,HDR_H); ctx.lineTo(W,HDR_H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,colY); ctx.lineTo(W,colY); ctx.stroke();
+
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 11px Arial';
+  ctx.fillText('PHASE',18,HDR_H+19);
+  ctx.textAlign='center';
+  ctx.fillText('START',W*0.52,HDR_H+19);
+  ctx.fillText('FINISH',W*0.65,HDR_H+19);
+  ctx.textAlign='right';
+  ctx.fillText('HOURS',W*0.82,HDR_H+19);
+  ctx.fillText('%',W-18,HDR_H+19);
   ctx.textAlign='left';
 
   // Phase rows
@@ -3297,31 +3315,53 @@ function renderPhasesCanvas(heat, totalMs){
     var startStr=new Date(heat.phases[p].startTime).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
     var endStr=heat.phases[p].endTime?new Date(heat.phases[p].endTime).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}):'—';
     var hrs=(ms/3600000).toFixed(2);
-    var ry=y+i*ROW_H;
-    if(i%2===1){ ctx.fillStyle='rgba(255,255,255,0.02)'; ctx.fillRect(0,ry,W,ROW_H); }
-    // Color dot
-    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(22,ry+ROW_H/2,4,0,Math.PI*2); ctx.fill();
-    // Phase name
-    ctx.fillStyle=col; ctx.font='bold 12px Arial'; ctx.fillText(PHASE_LABELS[p],32,ry+ROW_H/2+5);
-    // Start, Finish, Hrs, Pct
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='11px Arial'; ctx.textAlign='center';
-    ctx.fillText(startStr,270,ry+ROW_H/2+4); ctx.fillText(endStr,340,ry+ROW_H/2+4);
-    ctx.textAlign='right';
-    ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font='bold 11px Arial'; ctx.fillText(hrs,430,ry+ROW_H/2+4);
-    ctx.fillStyle=col; ctx.fillText(pct.toFixed(1)+'%',510,ry+ROW_H/2+4);
+    var ry=colY+i*ROW_H;
+    var midY=ry+ROW_H/2;
+
+    // Alternating row bg
+    if(i%2===1){ ctx.fillStyle='rgba(255,255,255,0.025)'; ctx.fillRect(0,ry,W,ROW_H); }
+    // Left colour bar
+    ctx.fillStyle=col; ctx.fillRect(0,ry,4,ROW_H);
+    // Dot
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(22,midY,6,0,Math.PI*2); ctx.fill();
+    // Phase label — big and clear
+    ctx.fillStyle=col; ctx.font='bold 15px Arial'; ctx.fillText(PHASE_LABELS[p],36,midY+6);
+    // Start / Finish
+    ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.font='14px Arial'; ctx.textAlign='center';
+    ctx.fillText(startStr,W*0.52,midY+6);
+    ctx.fillText(endStr,W*0.65,midY+6);
+    // Hours — bold, prominent
+    ctx.fillStyle='white'; ctx.font='bold 15px Arial'; ctx.textAlign='right';
+    ctx.fillText(hrs,W*0.82,midY+6);
+    // Pct — coloured
+    ctx.fillStyle=col; ctx.font='bold 14px Arial';
+    ctx.fillText(pct.toFixed(1)+'%',W-18,midY+6);
     ctx.textAlign='left';
+    // Row bottom divider
+    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(0,ry+ROW_H); ctx.lineTo(W,ry+ROW_H); ctx.stroke();
   });
 
   // Total row
-  var ty=HDR_H+phaseList.length*ROW_H;
-  ctx.fillStyle='rgba(245,158,11,0.1)'; ctx.fillRect(0,ty,W,ROW_H);
-  ctx.strokeStyle='rgba(245,158,11,0.3)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,ty); ctx.lineTo(W,ty); ctx.stroke();
-  ctx.fillStyle='#F59E0B'; ctx.font='bold 12px Arial'; ctx.fillText('TOTAL',16,ty+ROW_H/2+5);
-  ctx.textAlign='right'; ctx.fillText((totalMs/3600000).toFixed(2),430,ty+ROW_H/2+5); ctx.fillText('100%',510,ty+ROW_H/2+5); ctx.textAlign='left';
+  var ty=colY+phaseList.length*ROW_H;
+  ctx.fillStyle='rgba(245,158,11,0.12)'; ctx.fillRect(0,ty,W,ROW_H);
+  ctx.strokeStyle='rgba(245,158,11,0.5)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,ty); ctx.lineTo(W,ty); ctx.stroke();
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 16px Arial';
+  ctx.fillText('TOTAL',18,ty+ROW_H/2+6);
+  ctx.textAlign='right';
+  ctx.fillStyle='white'; ctx.font='bold 16px Arial';
+  ctx.fillText((totalMs/3600000).toFixed(2),W*0.82,ty+ROW_H/2+6);
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 15px Arial';
+  ctx.fillText('100%',W-18,ty+ROW_H/2+6);
+  ctx.textAlign='left';
 
   // Footer
-  ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='9px Arial';
-  ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',16,H-10);
+  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='11px Arial';
+  ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',18,H-14);
+  ctx.fillStyle='rgba(245,158,11,0.5)'; ctx.textAlign='right';
+  ctx.fillText('pyro-production.wynanddp.workers.dev',W-18,H-14);
+  ctx.textAlign='left';
 }
 
 async function sharePhasesCanvas(){
@@ -3330,53 +3370,146 @@ async function sharePhasesCanvas(){
 }
 
 async function shareTempGraph(){
-  // Render temp graph to canvas for sharing
-  var logs = _hdLogs.filter(function(l){return l.temp>0;});
+  var logs = _hdLogs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(!logs.length){ alert('No temperature data to share'); return; }
+  var heat = _hdHeat;
+  var W=600, H=360;
   var tempCanvas = document.createElement('canvas');
-  var W=540, H=320;
   tempCanvas.width=W; tempCanvas.height=H;
   var ctx=tempCanvas.getContext('2d');
+
+  // Background
   ctx.fillStyle='#0D0F14'; ctx.fillRect(0,0,W,H);
-  ctx.fillStyle='#F59E0B'; ctx.fillRect(0,0,W,4);
-  ctx.fillStyle='#F59E0B'; ctx.font='bold 13px Arial'; ctx.fillText('GeT Energy — Temperature Profile',16,24);
-  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='11px Arial';
-  ctx.fillText('Heat #'+_hdHeat.heatNumber+' · Reactor '+_hdHeat.reactor,16,40);
-  // Draw graph
+  var barG=ctx.createLinearGradient(0,0,W,0);
+  barG.addColorStop(0,'#F59E0B'); barG.addColorStop(1,'#EA580C');
+  ctx.fillStyle=barG; ctx.fillRect(0,0,W,5);
+
+  // Header
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 15px Arial'; ctx.fillText('GeT Energy — Temperature Profile',18,26);
+  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='12px Arial';
+  ctx.fillText('Heat #'+heat.heatNumber+' · Reactor '+heat.reactor,18,44);
+
   var temps=logs.map(function(l){return l.temp;});
   var times=logs.map(function(l){return new Date(l.timestamp);});
   var maxT=Math.max.apply(null,temps), minT=Math.min.apply(null,temps);
-  var PAD=40, GW=W-PAD*2, GH=200, GY=56;
-  // Grid
+  var range=Math.max(maxT-minT,1);
+  var LPAD=46, RPAD=16, TPAD=58, GH=200, BPAD=28;
+  var GW=W-LPAD-RPAD;
+  var baseY=TPAD+GH;
+
+  // Phase start/end times from heat
+  var rxStart = heat.phases&&heat.phases.reaction&&heat.phases.reaction.startTime ? new Date(heat.phases.reaction.startTime) : null;
+  var rxEnd   = heat.phases&&heat.phases.reaction&&heat.phases.reaction.endTime   ? new Date(heat.phases.reaction.endTime)   : null;
+  var cdStart = heat.phases&&heat.phases.cooldown&&heat.phases.cooldown.startTime ? new Date(heat.phases.cooldown.startTime) : null;
+  var cdEnd   = heat.phases&&heat.phases.cooldown&&heat.phases.cooldown.endTime   ? new Date(heat.phases.cooldown.endTime)   : null;
+
+  // Map timestamp to X coordinate
+  var t0=times[0].getTime(), t1=times[times.length-1].getTime(), tRange=Math.max(t1-t0,1);
+  function tx(d){ return LPAD+((d.getTime()-t0)/tRange)*GW; }
+  function ty(t){ return TPAD+GH*(1-(t-minT)/range); }
+
+  var pts=logs.map(function(l){ return {x:tx(new Date(l.timestamp)),y:ty(l.temp),t:l.temp}; });
+
+  // Grid lines + Y labels
   [0,0.25,0.5,0.75,1].forEach(function(f){
-    var y=GY+GH*f;
-    var temp=Math.round(maxT-(maxT-minT)*f);
-    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(PAD,y); ctx.lineTo(W-PAD,y); ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='10px Arial'; ctx.fillText(temp+'°C',4,y+4);
+    var y=TPAD+GH*f;
+    var temp=Math.round(maxT-range*f);
+    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(LPAD,y); ctx.lineTo(W-RPAD,y); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='10px Arial'; ctx.textAlign='right';
+    ctx.fillText(temp+'°',LPAD-4,y+4);
   });
-  // Line
-  var pts=temps.map(function(t,i){
-    return {x:PAD+i*GW/(temps.length-1),y:GY+GH*(1-(t-minT)/Math.max(maxT-minT,1))};
-  });
-  ctx.strokeStyle='#EA580C'; ctx.lineWidth=3; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.textAlign='left';
+
+  // Phase background bands (only where we have logs)
+  function drawPhaseBand(startTime, endTime, color, opacity){
+    if(!startTime) return;
+    var x1=tx(startTime);
+    var x2=endTime?tx(endTime):W-RPAD;
+    x1=Math.max(x1,LPAD); x2=Math.min(x2,W-RPAD);
+    if(x2<=x1) return;
+    ctx.fillStyle=color; ctx.globalAlpha=opacity;
+    ctx.fillRect(x1,TPAD,x2-x1,GH);
+    ctx.globalAlpha=1;
+  }
+  drawPhaseBand(rxStart,rxEnd,'#EA580C',0.08);
+  drawPhaseBand(cdStart,cdEnd,'#3B82F6',0.08);
+
+  // Phase divider lines
+  function drawPhaseLine(time, color, label){
+    if(!time) return;
+    var x=tx(time);
+    if(x<LPAD||x>W-RPAD) return;
+    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(x,TPAD); ctx.lineTo(x,baseY); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=color; ctx.font='bold 9px Arial'; ctx.textAlign='center';
+    ctx.fillText(label,x,TPAD-4);
+  }
+  drawPhaseLine(rxStart,'#EA580C','Reaction start');
+  drawPhaseLine(cdStart,'#3B82F6','Cooldown start');
+  ctx.textAlign='left';
+
+  // Gradient fill under line — use a single neutral gradient, bands handle colouring
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(function(p){ctx.lineTo(p.x,p.y);});
+  ctx.lineTo(pts[pts.length-1].x,baseY);
+  ctx.lineTo(pts[0].x,baseY);
+  ctx.closePath();
+  var fillG=ctx.createLinearGradient(0,TPAD,0,baseY);
+  fillG.addColorStop(0,'rgba(234,88,12,0.3)'); fillG.addColorStop(1,'rgba(234,88,12,0)');
+  ctx.fillStyle=fillG; ctx.fill();
+  ctx.restore();
+
+  // Main line
+  ctx.strokeStyle='#EA580C'; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.lineCap='round';
   ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
   pts.slice(1).forEach(function(p){ctx.lineTo(p.x,p.y);});
   ctx.stroke();
-  // Dots and labels
+
+  // Dots + temp labels
   pts.forEach(function(p,i){
-    ctx.fillStyle='#EA580C'; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle='white'; ctx.font='bold 10px Arial'; ctx.textAlign='center'; ctx.fillText(temps[i]+'°',p.x,p.y-10);
+    // Colour dot by phase
+    var t=times[i].getTime();
+    var dotCol='#F59E0B';
+    if(rxStart&&cdStart&&t>=cdStart.getTime()) dotCol='#3B82F6';
+    else if(rxStart&&t>=rxStart.getTime()) dotCol='#EA580C';
+    ctx.fillStyle=dotCol; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#0D0F14'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(p.x,p.y,5,0,Math.PI*2); ctx.stroke();
+    // Temp label
+    ctx.fillStyle='white'; ctx.font='bold 10px Arial'; ctx.textAlign='center';
+    ctx.fillText(p.t+'°',p.x,p.y-11);
+    // Time label
     ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='9px Arial';
-    ctx.fillText(times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),p.x,GY+GH+18);
+    ctx.fillText(times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),p.x,baseY+16);
   });
   ctx.textAlign='left';
-  // Stats row
-  var avgT=Math.round(temps.reduce(function(a,b){return a+b;},0)/temps.length);
-  ctx.fillStyle='#EA580C'; ctx.font='bold 12px Arial'; ctx.fillText('Peak: '+maxT+'°C',PAD,GY+GH+40);
-  ctx.fillStyle='#3B82F6'; ctx.fillText('Min: '+minT+'°C',PAD+130,GY+GH+40);
-  ctx.fillStyle='#94A3B8'; ctx.fillText('Avg: '+avgT+'°C',PAD+250,GY+GH+40);
-  ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='9px Arial'; ctx.fillText('GeT Energy (Pty) Ltd · pyro-production.wynanddp.workers.dev',PAD,H-10);
+
+  // Stats + legend row
+  var firstT=temps[0], lastT=temps[temps.length-1];
+  var statsY=baseY+34;
+  ctx.fillStyle='#EA580C'; ctx.font='bold 12px Arial'; ctx.fillText('Peak: '+maxT+'°C',LPAD,statsY);
+  ctx.fillStyle='#F59E0B'; ctx.fillText('Start: '+firstT+'°C',LPAD+130,statsY);
+  ctx.fillStyle='#3B82F6'; ctx.fillText('Final: '+lastT+'°C',LPAD+260,statsY);
+
+  // Phase legend
+  var legY=statsY+22;
+  [[rxStart,'#EA580C','Reaction'],[cdStart,'#3B82F6','Cooldown']].forEach(function(leg,i){
+    if(!leg[0]) return;
+    ctx.fillStyle=leg[1]; ctx.fillRect(LPAD+i*150,legY-10,14,10);
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='10px Arial';
+    ctx.fillText(leg[2],LPAD+i*150+18,legY);
+  });
+
+  // Footer
+  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='10px Arial';
+  ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',LPAD,H-10);
+  ctx.fillStyle='rgba(245,158,11,0.4)'; ctx.textAlign='right';
+  ctx.fillText('pyro-production.wynanddp.workers.dev',W-RPAD,H-10);
+  ctx.textAlign='left';
+
   shareCanvasDirect(tempCanvas);
 }
 
