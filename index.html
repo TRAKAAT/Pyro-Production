@@ -1009,7 +1009,14 @@ function navigate(screen){
   document.getElementById('screen-'+screen).classList.add('active');
   document.getElementById('nav-'+screen).classList.add('active');
   if(screen==='home') renderHome();
-  if(screen==='reactor') renderReactorDetail(currentReactor);
+  if(screen==='reactor'){
+    // Pull latest data before rendering reactor detail
+    if(getServerUrl()){
+      pullFromServer().then(function(){ renderReactorDetail(currentReactor); }).catch(function(){ renderReactorDetail(currentReactor); });
+    } else {
+      renderReactorDetail(currentReactor);
+    }
+  }
   if(screen==='checks') renderChecklist();
   if(screen==='stats') renderStats();
   if(screen==='history') renderHistory();
@@ -1109,6 +1116,20 @@ function renderReactorGrid(){
   // Start timer refresh
   clearInterval(timerInterval);
   timerInterval = setInterval(()=>{ renderReactorGrid(); renderShiftBanner(); }, 1000);
+  // Auto-pull from server every 60s to get logs submitted from other devices
+  if(!window._autoPullInterval){
+    window._autoPullInterval = setInterval(function(){
+      var activeScreen = document.querySelector('.screen.active');
+      if(activeScreen && (activeScreen.id==='screen-reactor'||activeScreen.id==='screen-home')){
+        if(getServerUrl()){
+          pullFromServer().then(function(){
+            if(activeScreen.id==='screen-reactor') renderReactorDetail(currentReactor);
+            else renderHome();
+          }).catch(function(){});
+        }
+      }
+    }, 60000);
+  }
 }
 
 function makeReactorCard(r, heat){
