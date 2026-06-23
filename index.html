@@ -693,7 +693,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       </select>
     </div>
     <div class="form-group">
-      <label class="form-label">Load Weight (tons)</label>
+      <label class="form-label">Load Weight (kg)</label>
       <input class="form-input" id="edit-heat-weight" type="number" inputmode="decimal" step="0.1">
     </div>
 
@@ -1278,7 +1278,7 @@ function renderReactorDetail(r){
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:center">
         <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px" onclick="openEditCurrentHeat()">✏️ Edit Heat</button>
         <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px;color:var(--red);" onclick="revertLastPhase(getActiveHeat(currentReactor)&&getActiveHeat(currentReactor).id)">↩ Revert Phase</button>
-        ${phase==='reaction'?`<button class="btn btn-ghost-amber btn-sm" style="width:auto;padding:6px 14px" onclick="openHourlyLogModal()">📊 Hourly Log</button>`:''}
+        ${(phase==='reaction'||phase==='cooldown')?`<button class="btn btn-ghost-amber btn-sm" style="width:auto;padding:6px 14px" onclick="openHourlyLogModal()">📊 Hourly Log</button>`:''}
       </div>`;
   } else {
     phaseEl.innerHTML = `
@@ -1305,7 +1305,7 @@ function renderReactorDetail(r){
   // Hourly logs
   const logs = db.hourlyLogs.filter(l=>l.heatId===heat.id).sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
   const logsCard = document.getElementById('hourly-logs-card');
-  logsCard.style.display = (phase==='reaction'||logs.length>0) ? '' : 'none';
+  logsCard.style.display = (phase==='reaction'||phase==='cooldown'||logs.length>0) ? '' : 'none';
   renderHourlyLogsList(logs);
 
   // Yield card
@@ -1319,7 +1319,7 @@ function renderReactorDetail(r){
 
   // WA share (show during reaction if there are logs)
   const waCard = document.getElementById('wa-card');
-  if(phase==='reaction' && logs.length>0){
+  if((phase==='reaction'||phase==='cooldown') && logs.length>0){
     waCard.style.display='';
     var lastLog = logs[logs.length-1];
     renderWAPreview(heat, lastLog);
@@ -1500,7 +1500,7 @@ function promptAdvancePhase(phase, nextPhase){
 
   let body = '';
   if(phase==='loading'){
-    body = '<div class="form-group"><label class="form-label">Final Load Weight (tons)</label><input class="form-input" id="advance-load-weight" type="number" placeholder="e.g. 17.2" inputmode="decimal" step="0.1" style="margin-top:4px"></div>';
+    body = '<div class="form-group"><label class="form-label">Final Load Weight (kg)</label><input class="form-input" id="advance-load-weight" type="number" placeholder="e.g. 17500" inputmode="numeric" step="1" style="margin-top:4px"></div>';
   }
   if(phase==='purging'){
     body = '<div style="color:var(--muted);font-size:14px;margin-bottom:12px">⚠️ Confirm pre-start checklist has been completed before proceeding to ignition.</div>';
@@ -3136,13 +3136,13 @@ function renderHeatOverview(heat){
 
   var kpis = [
     {icon:'📅',label:'Date',val:heat.createdAt?new Date(heat.createdAt).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}):'—',col:'#94A3B8'},
-    {icon:'⚖️',label:'Load Weight',val:heat.loadWeight?heat.loadWeight+'t':'—',col:'#F59E0B'},
+    {icon:'⚖️',label:'Load Weight',val:heat.loadWeight?heat.loadWeight.toLocaleString()+' kg':'—',col:'#F59E0B'},
     {icon:'🛢',label:'Pyrolysis Oil',val:heat.yields?heat.yields.oilKg.toLocaleString()+' L':'—',col:'#F59E0B'},
     {icon:'📦',label:'Carbon Black',val:_hdCbKg?_hdCbKg.toFixed(0)+' kg':'—',col:'#22C55E'},
     {icon:'🔩',label:'Wire',val:heat.yields?heat.yields.wireKg+' kg':'—',col:'#94A3B8'},
     {icon:'⏱',label:'Total Runtime',val:totalHrs+'h',col:'#EA580C'},
     {icon:'🔥',label:'Reaction Time',val:reactionHrs+'h',col:'#EA580C'},
-    {icon:'👷',label:'Supervisor',val:heat.supervisor||'—',col:'#94A3B8'},
+    {icon:'❄️',label:'Cooldown Time',val:heat.phases&&heat.phases.cooldown?fmtDurationHrs(phaseDurationMs(heat.phases.cooldown))+'h':'—',col:'#3B82F6'},
   ];
 
   el.innerHTML = '';
@@ -3157,14 +3157,16 @@ function renderHeatOverview(heat){
   // Yield per ton efficiency if we have load weight
   el2.innerHTML = '';
   if(heat.loadWeight&&heat.yields){
-    var oilPerTon = (heat.yields.oilKg/heat.loadWeight).toFixed(0);
-    var cbPerTon = (_hdCbKg/heat.loadWeight).toFixed(0);
+    // loadWeight is in kg, convert to tons for yield calculation
+    var loadTons = heat.loadWeight/1000;
+    var oilPerTon = loadTons>0?(heat.yields.oilKg/loadTons).toFixed(1):'—';
+    var cbPerTon = loadTons>0?(_hdCbKg/loadTons).toFixed(1):'—';
     var eff = document.createElement('div');
     eff.style.cssText = 'background:linear-gradient(135deg,#1a2535,#1E2330);border:1px solid var(--border);border-radius:12px;padding:14px;margin-top:4px;';
     eff.innerHTML = '<div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Yield per Ton Fed</div>'
       +'<div style="display:flex;gap:16px;">'
-      +'<div><div style="font-size:24px;font-weight:800;color:#F59E0B;">'+oilPerTon+'kg</div><div style="font-size:11px;color:var(--muted);">oil / ton</div></div>'
-      +'<div><div style="font-size:24px;font-weight:800;color:#22C55E;">'+cbPerTon+'kg</div><div style="font-size:11px;color:var(--muted);">CB / ton</div></div>'
+      +'<div><div style="font-size:24px;font-weight:800;color:#F59E0B;">'+oilPerTon+' L</div><div style="font-size:11px;color:var(--muted);">oil / ton</div></div>'
+      +'<div><div style="font-size:24px;font-weight:800;color:#22C55E;">'+cbPerTon+' kg</div><div style="font-size:11px;color:var(--muted);">CB / ton</div></div>'
       +'<div><div style="font-size:24px;font-weight:800;color:#EA580C;">'+totalHrs+'h</div><div style="font-size:11px;color:var(--muted);">total runtime</div></div>'
       +'</div>';
     el2.appendChild(eff);
@@ -3177,7 +3179,8 @@ function renderHeatOverview(heat){
       var maxT=Math.max.apply(null,temps), minT=Math.min.apply(null,temps), avgT=Math.round(temps.reduce(function(a,b){return a+b;},0)/temps.length);
       var logSum = document.createElement('div');
       logSum.style.cssText = 'display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px;';
-      [{l:'Peak Temp',v:maxT+'°C',c:'#EA580C'},{l:'Min Temp',v:minT+'°C',c:'#3B82F6'},{l:'Avg Temp',v:avgT+'°C',c:'#94A3B8'}].forEach(function(s){
+      var firstT2=temps[0],lastT2=temps[temps.length-1];
+      [{l:'Peak Temp',v:maxT+'°C',c:'#EA580C'},{l:'Start Temp',v:firstT2+'°C',c:'#F59E0B'},{l:'Final Temp',v:lastT2+'°C',c:'#3B82F6'}].forEach(function(s){
         var t=document.createElement('div');
         t.style.cssText='background:var(--surface2);border-radius:8px;padding:10px;text-align:center;';
         t.innerHTML='<div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">'+s.l+'</div><div style="font-size:20px;font-weight:800;color:'+s.c+';">'+s.v+'</div>';
@@ -3192,28 +3195,52 @@ function renderHeatPhasesTab(heat, totalMs){
   var el = document.getElementById('hd-phases');
   if(!el) return;
   el.innerHTML = '';
+
+  // Header row
+  var table = document.createElement('div');
+  table.style.cssText = 'background:var(--surface2);border-radius:12px;overflow:hidden;';
+
+  // Table header
+  var hdr = document.createElement('div');
+  hdr.style.cssText = 'display:grid;grid-template-columns:1fr 60px 60px 52px 44px;gap:0;background:var(--surface);padding:8px 12px;border-bottom:1px solid var(--border);';
+  hdr.innerHTML = '<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;">Phase</div>'
+    +'<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:center;">Start</div>'
+    +'<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:center;">Finish</div>'
+    +'<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:right;">Hours</div>'
+    +'<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;text-align:right;">%</div>';
+  table.appendChild(hdr);
+
+  var phaseCount = 0;
   PHASES.forEach(function(p){
     if(!heat.phases[p]||!heat.phases[p].startTime) return;
     var ms = phaseDurationMs(heat.phases[p]);
     var pct = totalMs>0?(ms/totalMs*100):0;
     var col = PH_COLORS[p]||'#888';
     var startStr = new Date(heat.phases[p].startTime).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
-    var endStr = heat.phases[p].endTime ? new Date(heat.phases[p].endTime).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}) : 'ongoing';
+    var endStr = heat.phases[p].endTime ? new Date(heat.phases[p].endTime).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}) : '—';
+    var hrs = (ms/3600000).toFixed(2);
     var row = document.createElement('div');
-    row.style.cssText = 'margin-bottom:14px;background:var(--surface2);border-radius:10px;padding:12px;border-left:4px solid '+col+';';
-    row.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
-      +'<span style="font-weight:700;font-size:14px;color:'+col+';">'+PHASE_LABELS[p]+'</span>'
-      +'<span style="font-size:13px;font-weight:800;color:var(--text);">'+fmtDurationHrs(ms)+'h</span>'
-      +'</div>'
-      +'<div style="background:var(--bg);border-radius:4px;height:10px;overflow:hidden;margin-bottom:6px;">'
-      +'<div style="height:100%;border-radius:4px;background:'+col+';width:'+pct.toFixed(1)+'%;"></div>'
-      +'</div>'
-      +'<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);">'
-      +'<span>'+startStr+' → '+endStr+'</span>'
-      +'<span style="color:'+col+';font-weight:700;">'+pct.toFixed(1)+'% of total</span>'
-      +'</div>';
-    el.appendChild(row);
+    row.style.cssText = 'display:grid;grid-template-columns:1fr 60px 60px 52px 44px;gap:0;padding:10px 12px;border-bottom:1px solid var(--border);align-items:center;'+(phaseCount%2===1?'background:rgba(255,255,255,0.02);':'');
+    row.innerHTML = '<div style="display:flex;align-items:center;gap:6px;">'
+      +'<div style="width:8px;height:8px;border-radius:50%;background:'+col+';flex-shrink:0;"></div>'
+      +'<span style="font-size:13px;font-weight:600;color:'+col+';">'+PHASE_LABELS[p]+'</span></div>'
+      +'<div style="font-size:12px;color:var(--muted);text-align:center;">'+startStr+'</div>'
+      +'<div style="font-size:12px;color:var(--muted);text-align:center;">'+endStr+'</div>'
+      +'<div style="font-size:13px;font-weight:700;color:var(--text);text-align:right;">'+hrs+'h</div>'
+      +'<div style="font-size:12px;font-weight:700;text-align:right;color:'+col+';">'+pct.toFixed(1)+'%</div>';
+    table.appendChild(row);
+    phaseCount++;
   });
+
+  // Total row
+  var totalRow = document.createElement('div');
+  totalRow.style.cssText = 'display:grid;grid-template-columns:1fr 60px 60px 52px 44px;gap:0;padding:10px 12px;background:var(--surface);align-items:center;border-top:2px solid var(--border);';
+  totalRow.innerHTML = '<div style="font-size:13px;font-weight:800;color:var(--amber);">TOTAL</div>'
+    +'<div></div><div></div>'
+    +'<div style="font-size:13px;font-weight:800;color:var(--amber);text-align:right;">'+(totalMs/3600000).toFixed(2)+'h</div>'
+    +'<div style="font-size:12px;font-weight:700;color:var(--amber);text-align:right;">100%</div>';
+  table.appendChild(totalRow);
+  el.appendChild(table);
 }
 
 function renderHeatTempTab(logs){
@@ -3225,9 +3252,10 @@ function renderHeatTempTab(logs){
   renderTempGraph(validLogs, 'hd-temp-graph');
   if(statsEl && validLogs.length){
     var temps = validLogs.map(function(l){return l.temp;});
-    var maxT=Math.max.apply(null,temps), minT=Math.min.apply(null,temps), avgT=Math.round(temps.reduce(function(a,b){return a+b;},0)/temps.length);
+    var maxT=Math.max.apply(null,temps);
+    var firstT=temps[0], lastT=temps[temps.length-1];
     statsEl.innerHTML = '';
-    [{l:'Peak',v:maxT+'°C',c:'#EA580C'},{l:'Min',v:minT+'°C',c:'#3B82F6'},{l:'Average',v:avgT+'°C',c:'#94A3B8'}].forEach(function(s){
+    [{l:'Peak',v:maxT+'°C',c:'#EA580C'},{l:'Start',v:firstT+'°C',c:'#F59E0B'},{l:'Final',v:lastT+'°C',c:'#3B82F6'}].forEach(function(s){
       var t=document.createElement('div');
       t.style.cssText='background:var(--surface2);border-radius:8px;padding:10px;text-align:center;';
       t.innerHTML='<div style="font-size:9px;color:var(--muted);text-transform:uppercase;margin-bottom:3px;">'+s.l+'</div><div style="font-size:22px;font-weight:800;color:'+s.c+';">'+s.v+'</div>';
@@ -3237,30 +3265,63 @@ function renderHeatTempTab(logs){
 }
 
 function renderPhasesCanvas(heat, totalMs){
-  // Off-screen canvas for sharing phase report
   var canvas = document.getElementById('hd-phases-canvas');
   if(!canvas) return;
-  var W=540, H=60+PHASES.filter(function(p){return heat.phases&&heat.phases[p]&&heat.phases[p].startTime;}).length*70+60;
+  var phaseList = PHASES.filter(function(p){return heat.phases&&heat.phases[p]&&heat.phases[p].startTime;});
+  var ROW_H=36, HDR_H=70, FOOTER_H=30;
+  var W=540, H=HDR_H+(phaseList.length+1)*ROW_H+FOOTER_H;
   canvas.width=W; canvas.height=H;
   var ctx=canvas.getContext('2d');
   ctx.fillStyle='#0D0F14'; ctx.fillRect(0,0,W,H);
   ctx.fillStyle='#F59E0B'; ctx.fillRect(0,0,W,4);
-  ctx.fillStyle='#F59E0B'; ctx.font='bold 13px Arial'; ctx.fillText('GeT Energy — Phase Breakdown',16,24);
+
+  // Header
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 14px Arial'; ctx.fillText('GeT Energy — Phase Breakdown',16,24);
   ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='11px Arial';
   ctx.fillText('Heat #'+heat.heatNumber+' · Reactor '+heat.reactor+' · '+heat.material,16,40);
-  var y=56;
-  PHASES.forEach(function(p){
-    if(!heat.phases[p]||!heat.phases[p].startTime) return;
+
+  // Column headers
+  var y=HDR_H;
+  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(0,y-20,W,20);
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 9px Arial';
+  ctx.fillText('PHASE',16,y-7); ctx.textAlign='center';
+  ctx.fillText('START',270,y-7); ctx.fillText('FINISH',340,y-7);
+  ctx.textAlign='right'; ctx.fillText('HRS',430,y-7); ctx.fillText('%',510,y-7);
+  ctx.textAlign='left';
+
+  // Phase rows
+  phaseList.forEach(function(p,i){
     var ms=phaseDurationMs(heat.phases[p]);
     var pct=totalMs>0?(ms/totalMs*100):0;
     var col=PH_COLORS[p]||'#888';
-    ctx.fillStyle=col; ctx.font='bold 12px Arial'; ctx.fillText(PHASE_LABELS[p],16,y+14);
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='11px Arial'; ctx.fillText(fmtDurationHrs(ms)+'h  '+pct.toFixed(1)+'%',W-120,y+14);
-    ctx.fillStyle='#1E2330'; roundRect(ctx,16,y+20,W-32,12,4); ctx.fill();
-    ctx.fillStyle=col; roundRect(ctx,16,y+20,Math.max((W-32)*pct/100,4),12,4); ctx.fill();
-    y+=54;
+    var startStr=new Date(heat.phases[p].startTime).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+    var endStr=heat.phases[p].endTime?new Date(heat.phases[p].endTime).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}):'—';
+    var hrs=(ms/3600000).toFixed(2);
+    var ry=y+i*ROW_H;
+    if(i%2===1){ ctx.fillStyle='rgba(255,255,255,0.02)'; ctx.fillRect(0,ry,W,ROW_H); }
+    // Color dot
+    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(22,ry+ROW_H/2,4,0,Math.PI*2); ctx.fill();
+    // Phase name
+    ctx.fillStyle=col; ctx.font='bold 12px Arial'; ctx.fillText(PHASE_LABELS[p],32,ry+ROW_H/2+5);
+    // Start, Finish, Hrs, Pct
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='11px Arial'; ctx.textAlign='center';
+    ctx.fillText(startStr,270,ry+ROW_H/2+4); ctx.fillText(endStr,340,ry+ROW_H/2+4);
+    ctx.textAlign='right';
+    ctx.fillStyle='rgba(255,255,255,0.8)'; ctx.font='bold 11px Arial'; ctx.fillText(hrs,430,ry+ROW_H/2+4);
+    ctx.fillStyle=col; ctx.fillText(pct.toFixed(1)+'%',510,ry+ROW_H/2+4);
+    ctx.textAlign='left';
   });
-  ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='9px Arial'; ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',16,H-10);
+
+  // Total row
+  var ty=HDR_H+phaseList.length*ROW_H;
+  ctx.fillStyle='rgba(245,158,11,0.1)'; ctx.fillRect(0,ty,W,ROW_H);
+  ctx.strokeStyle='rgba(245,158,11,0.3)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,ty); ctx.lineTo(W,ty); ctx.stroke();
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 12px Arial'; ctx.fillText('TOTAL',16,ty+ROW_H/2+5);
+  ctx.textAlign='right'; ctx.fillText((totalMs/3600000).toFixed(2),430,ty+ROW_H/2+5); ctx.fillText('100%',510,ty+ROW_H/2+5); ctx.textAlign='left';
+
+  // Footer
+  ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='9px Arial';
+  ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',16,H-10);
 }
 
 async function sharePhasesCanvas(){
@@ -3351,7 +3412,7 @@ function renderHeatCard(heat, cbKg, totalMs){
 
   // KPI grid — 3 across, 2 rows
   var kpis=[
-    {l:'Load Weight',v:heat.loadWeight?heat.loadWeight+'t':'—',c:'#F59E0B'},
+    {l:'Load Weight',v:heat.loadWeight?heat.loadWeight.toLocaleString()+' kg':'—',c:'#F59E0B'},
     {l:'Pyrolysis Oil',v:heat.yields?heat.yields.oilKg.toLocaleString()+' L':'—',c:'#F59E0B'},
     {l:'Carbon Black',v:cbKg?cbKg.toFixed(0)+' kg':'—',c:'#22C55E'},
     {l:'Wire',v:heat.yields?heat.yields.wireKg+' kg':'—',c:'#94A3B8'},
