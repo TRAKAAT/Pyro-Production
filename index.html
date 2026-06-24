@@ -1811,7 +1811,9 @@ function deleteHourlyLog(logId){
   var db=getDB();
   db.hourlyLogs=db.hourlyLogs.filter(function(l){return l.id!==logId;});
   saveDB(db);
-  syncToServer();
+  // DELETE directly on server — don't rely on sync which uses DO UPDATE
+  var url=getServerUrl();
+  if(url){ fetch(url+'/hourly-logs/'+logId,{method:'DELETE'}).catch(function(e){console.warn('Server delete failed:',e);}); }
   renderReactorDetail(currentReactor);
 }
 
@@ -2085,6 +2087,8 @@ function deleteEditLog(logId){
   var db=getDB();
   db.hourlyLogs=db.hourlyLogs.filter(function(l){return l.id!==logId;});
   saveDB(db);
+  var url=getServerUrl();
+  if(url){ fetch(url+'/hourly-logs/'+logId,{method:'DELETE'}).catch(function(e){console.warn('Server delete failed:',e);}); }
   renderEditHourlyLogs(editHeatId);
 }
 
@@ -2647,10 +2651,11 @@ async function pullFromServer(){
     const remote=await res.json();
     const local=getDB();
 
-    // Merge: remote wins for heats/shifts (last write wins by updated_at)
-    // For hourly logs: union by id
+    // Server is source of truth for hourly logs — remote replaces local
+    // (edits and deletes on server must propagate back)
+    // For heats/shifts: merge so local unsaved drafts aren't lost
     const mergeById=(arr1,arr2)=>{
-      const map={}; 
+      const map={};
       [...(arr1||[]),...(arr2||[])].forEach(item=>{ if(item?.id) map[item.id]=item; });
       return Object.values(map);
     };
@@ -2658,7 +2663,7 @@ async function pullFromServer(){
     const merged={
       heats: mergeById(local.heats, remote.heats),
       shifts: mergeById(local.shifts, remote.shifts),
-      hourlyLogs: mergeById(local.hourlyLogs, remote.hourlyLogs),
+      hourlyLogs: remote.hourlyLogs||[],  // server is authoritative — edits/deletes propagate
       checklists: mergeById(local.checklists, remote.checklists),
     };
     saveDB(merged);
