@@ -1988,6 +1988,8 @@ function openEditHeatModal(heatId){
   document.getElementById('modal-edit-heat').classList.add('open');
 }
 
+var _editingLogId = null;
+
 function renderEditHourlyLogs(heatId){
   var db=getDB();
   var logs=db.hourlyLogs.filter(function(l){return l.heatId===heatId;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
@@ -1996,11 +1998,64 @@ function renderEditHourlyLogs(heatId){
   if(!logs.length){ el.innerHTML='<div style="font-size:12px;color:var(--muted);padding:8px 0;">No hourly logs recorded yet</div>'; return; }
   el.innerHTML='';
   logs.forEach(function(log){
-    var row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);';
-    var t=new Date(log.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
-    var d=new Date(log.timestamp).toLocaleDateString('en-ZA',{day:'numeric',month:'short'});
-    var info=document.createElement('div'); info.innerHTML='<div style="font-size:13px;font-weight:700;">'+d+' '+t+' — '+log.temp+'°C</div><div style="font-size:11px;color:var(--muted);">Oil: '+(log.oilLevel||'—')+' L'+(log.notes?' · '+log.notes:'')+(log._manualEntry?' (manual)':'')+'</div>'; row.appendChild(info);
-    var delBtn=document.createElement('button'); delBtn.textContent='×'; delBtn.style.cssText='background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px;'; (function(id){delBtn.onclick=function(){deleteEditLog(id);};})(log.id); row.appendChild(delBtn);
+    var isEditing = _editingLogId === log.id;
+    var wrap=document.createElement('div');
+    wrap.style.cssText='padding:8px 0;border-bottom:1px solid var(--border);';
+
+    if(isEditing){
+      // Inline edit form
+      var toLocalDT=function(iso){ if(!iso) return ''; var d=new Date(iso),off=d.getTimezoneOffset(),local=new Date(d.getTime()-off*60000); return local.toISOString().slice(0,16); };
+      wrap.style.cssText='padding:10px;border:1px solid var(--amber);border-radius:8px;margin-bottom:6px;background:var(--surface2);';
+      wrap.innerHTML='<div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:8px;">EDITING LOG</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">'
+        +'<div><label style="font-size:10px;color:var(--muted);">Date & Time</label>'
+        +'<input type="datetime-local" id="elog-time-'+log.id+'" class="form-input" style="font-size:12px;padding:6px;" value="'+toLocalDT(log.timestamp)+'"></div>'
+        +'<div><label style="font-size:10px;color:var(--muted);">Temperature (°C)</label>'
+        +'<input type="number" id="elog-temp-'+log.id+'" class="form-input" style="font-size:12px;padding:6px;" value="'+log.temp+'"></div>'
+        +'<div><label style="font-size:10px;color:var(--muted);">Oil Level (L)</label>'
+        +'<input type="number" id="elog-oil-'+log.id+'" class="form-input" style="font-size:12px;padding:6px;" value="'+(log.oilLevel||'')+'"></div>'
+        +'<div><label style="font-size:10px;color:var(--muted);">Notes</label>'
+        +'<input type="text" id="elog-notes-'+log.id+'" class="form-input" style="font-size:12px;padding:6px;" value="'+(log.notes||'')+'"></div>'
+        +'</div>'
+        +'<div style="display:flex;gap:6px;">'
+        +'<button class="btn btn-ghost btn-sm" style="flex:1" id="elog-cancel-'+log.id+'">Cancel</button>'
+        +'<button class="btn btn-amber btn-sm" style="flex:1" id="elog-save-'+log.id+'">Save</button>'
+        +'</div>';
+      wrap.querySelector('#elog-cancel-'+log.id).onclick=function(){ _editingLogId=null; renderEditHourlyLogs(heatId); };
+      wrap.querySelector('#elog-save-'+log.id).onclick=function(){
+        var db2=getDB();
+        var idx=db2.hourlyLogs.findIndex(function(l){return l.id===log.id;});
+        if(idx===-1) return;
+        var timeEl=document.getElementById('elog-time-'+log.id);
+        var tempEl=document.getElementById('elog-temp-'+log.id);
+        var oilEl=document.getElementById('elog-oil-'+log.id);
+        var notesEl=document.getElementById('elog-notes-'+log.id);
+        if(timeEl&&timeEl.value) db2.hourlyLogs[idx].timestamp=new Date(timeEl.value).toISOString();
+        if(tempEl&&tempEl.value) db2.hourlyLogs[idx].temp=parseInt(tempEl.value);
+        if(oilEl) db2.hourlyLogs[idx].oilLevel=parseFloat(oilEl.value)||null;
+        if(notesEl) db2.hourlyLogs[idx].notes=notesEl.value;
+        db2.hourlyLogs[idx]._manualEntry=true;
+        saveDB(db2); syncToServer();
+        _editingLogId=null; renderEditHourlyLogs(heatId);
+      };
+    } else {
+      // Read-only row with edit + delete buttons
+      var t=new Date(log.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
+      var d=new Date(log.timestamp).toLocaleDateString('en-ZA',{day:'numeric',month:'short'});
+      var row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;align-items:center;';
+      var info=document.createElement('div');
+      info.innerHTML='<div style="font-size:13px;font-weight:700;">'+d+' '+t+' — <span style="color:var(--orange);">'+log.temp+'°C</span></div>'
+        +'<div style="font-size:11px;color:var(--muted);">Oil: '+(log.oilLevel||'—')+' L'+(log.notes?' · '+log.notes:'')+(log._manualEntry?' · ✏️':'')+'</div>';
+      row.appendChild(info);
+      var btns=document.createElement('div'); btns.style.cssText='display:flex;gap:4px;flex-shrink:0;';
+      var editBtn=document.createElement('button'); editBtn.textContent='✏️'; editBtn.style.cssText='background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;font-size:13px;';
+      (function(id){editBtn.onclick=function(){ _editingLogId=id; renderEditHourlyLogs(heatId); };})(log.id);
+      var delBtn=document.createElement('button'); delBtn.textContent='×'; delBtn.style.cssText='background:none;border:none;color:var(--red);cursor:pointer;font-size:18px;padding:4px;';
+      (function(id){delBtn.onclick=function(){deleteEditLog(id);};})(log.id);
+      btns.appendChild(editBtn); btns.appendChild(delBtn); row.appendChild(btns);
+      wrap.appendChild(row);
+    }
+    el.appendChild(wrap);
   });
 }
 
@@ -2672,7 +2727,11 @@ function renderTempGraph(logs){
   const temps=validLogs.map(function(l){return l.temp;});
   const times=validLogs.map(function(l){return new Date(l.timestamp);});
   const maxT=Math.max.apply(null,temps);
-  const minT=Math.min.apply(null,temps);
+  const rawMin=Math.min.apply(null,temps);
+  // Start Y axis slightly below the minimum reading, not at 0
+  // This uses the available graph height for actual data, not empty space
+  const padding=Math.max(Math.round((maxT-rawMin)*0.1),10);
+  const minT=Math.max(0, rawMin-padding);
   const range=Math.max(maxT-minT,1);
 
   // Layout — left pad for Y labels, bottom pad for time labels, top pad for dot labels
@@ -3441,7 +3500,9 @@ async function shareTempGraph(){
   var times=logs.map(function(l){return new Date(l.timestamp);});
   var n=temps.length;
   var maxT=Math.max.apply(null,temps);
-  var minT=Math.min.apply(null,[0].concat(temps)); // include 0 baseline
+  var rawMin=Math.min.apply(null,temps);
+  var minPad=Math.max(Math.round((maxT-rawMin)*0.1),10);
+  var minT=Math.max(0,rawMin-minPad); // start near data, not at 0
   var range=Math.max(maxT-minT,1);
 
   // X positions — EVENLY SPACED by index (not real time)
