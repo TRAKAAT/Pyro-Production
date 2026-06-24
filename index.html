@@ -2735,7 +2735,7 @@ function renderTempGraph(logs){
   const range=Math.max(maxT-minT,1);
 
   // Layout — left pad for Y labels, bottom pad for time labels, top pad for dot labels
-  const LPAD=38; const RPAD=12; const TPAD=22; const BPAD=28;
+  const LPAD=38; const RPAD=12; const TPAD=36; const BPAD=28;
   const POINT_SPACING=56;
   const W=Math.max(validLogs.length*POINT_SPACING+LPAD+RPAD, 300);
   const GH=140; // graph area height
@@ -2794,7 +2794,7 @@ function renderTempGraph(logs){
     if(cdStart2&&t2>=cdStart2) dotCol='#3B82F6';
     else if(rxStart2&&t2>=rxStart2) dotCol='#EA580C';
     svg+='<circle cx="'+p.x+'" cy="'+p.y+'" r="5" fill="'+dotCol+'" stroke="#0D0F14" stroke-width="1.5"/>';
-    var labelY=Math.max(p.y-10, TPAD+10);
+    var labelY=Math.max(p.y-12, TPAD+14);
     svg+='<text x="'+p.x+'" y="'+labelY+'" fill="white" font-size="10" font-weight="bold" text-anchor="middle">'+p.t+'°</text>';
     var tStr=times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'});
     svg+='<text x="'+p.x+'" y="'+(TPAD+GH+18)+'" fill="rgba(255,255,255,0.45)" font-size="9" text-anchor="middle">'+tStr+'</text>';
@@ -3492,7 +3492,7 @@ async function shareTempGraph(){
   ctx.fillText('Heat #'+heat.heatNumber+' · Reactor '+heat.reactor+' · '+(heat.material||''),18,46);
 
   // ── Graph area ───────────────────────────────────────────────────────────────
-  var LPAD=50, RPAD=20, TPAD=62, BPAD=80;
+  var LPAD=50, RPAD=20, TPAD=80, BPAD=80;
   var GW=W-LPAD-RPAD, GH=H-TPAD-BPAD;
   var baseY=TPAD+GH;
 
@@ -3667,84 +3667,155 @@ async function shareTempGraph(){
 function renderHeatCard(heat, cbKg, totalMs){
   var canvas = document.getElementById('hd-share-canvas');
   if(!canvas) return;
-  var W=540, H=340;
+  var W=600, H=520;
   canvas.width=W; canvas.height=H;
   var ctx=canvas.getContext('2d');
 
-  // Background gradient
-  var grad=ctx.createLinearGradient(0,0,W,H);
-  grad.addColorStop(0,'#0D0F14'); grad.addColorStop(1,'#1a2535');
-  ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+  // ── Background ───────────────────────────────────────────────────────────────
+  var bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#0A0E1A'); bg.addColorStop(1,'#111827');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
 
-  // Gold accent bar
-  var barGrad=ctx.createLinearGradient(0,0,W,0);
-  barGrad.addColorStop(0,'#F59E0B'); barGrad.addColorStop(1,'#EA580C');
-  ctx.fillStyle=barGrad; ctx.fillRect(0,0,W,5);
+  // Top accent
+  var accentG=ctx.createLinearGradient(0,0,W,0);
+  accentG.addColorStop(0,'#F59E0B'); accentG.addColorStop(0.5,'#EA580C'); accentG.addColorStop(1,'#F59E0B');
+  ctx.fillStyle=accentG; ctx.fillRect(0,0,W,6);
 
-  // Header
-  ctx.fillStyle='#F59E0B'; ctx.font='bold 13px Arial'; ctx.fillText('GeT Energy — Pyrolysis Report',18,26);
-  var dateStr=heat.createdAt?new Date(heat.createdAt).toLocaleDateString('en-ZA',{day:'numeric',month:'long',year:'numeric'}):'';
-  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='11px Arial'; ctx.fillText(dateStr,18,42);
+  // ── Header band ───────────────────────────────────────────────────────────────
+  ctx.fillStyle='rgba(245,158,11,0.08)'; ctx.fillRect(0,6,W,68);
+  ctx.strokeStyle='rgba(245,158,11,0.15)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,74); ctx.lineTo(W,74); ctx.stroke();
+
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 13px Arial'; ctx.fillText('GeT ENERGY',18,26);
+  ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='11px Arial'; ctx.fillText('Pyrolysis Process Report',18,42);
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='12px Arial';
+  var dateStr=heat.createdAt?new Date(heat.createdAt).toLocaleDateString('en-ZA',{weekday:'short',day:'numeric',month:'long',year:'numeric'}):'';
+  ctx.textAlign='right'; ctx.fillText(dateStr,W-18,26); ctx.textAlign='left';
+  ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px Arial'; ctx.textAlign='right';
+  ctx.fillText('R'+heat.reactor+' · '+heat.material,W-18,42); ctx.textAlign='left';
 
   // Heat number
-  ctx.fillStyle='white'; ctx.font='bold 44px Arial'; ctx.fillText('Heat #'+heat.heatNumber,18,96);
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='13px Arial'; ctx.fillText('Reactor '+heat.reactor+' · '+heat.material+(heat.supervisor?' · '+heat.supervisor:''),18,116);
+  ctx.fillStyle='white'; ctx.font='bold 52px Arial'; ctx.fillText('Heat #'+heat.heatNumber,18,128);
 
-  // Divider
-  ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1;
-  ctx.beginPath(); ctx.moveTo(18,130); ctx.lineTo(W-18,130); ctx.stroke();
+  // ── Left column: key stats (x=18, y=148) ─────────────────────────────────────
+  var totalHrs=(totalMs/3600000).toFixed(1);
+  var reactionMs=heat.phases&&heat.phases.reaction?phaseDurationMs(heat.phases.reaction):0;
+  var cooldownMs=heat.phases&&heat.phases.cooldown?phaseDurationMs(heat.phases.cooldown):0;
+  var oilL=heat.yields?heat.yields.oilKg:0;
+  var wireKg=heat.yields?heat.yields.wireKg:0;
+  var loadKg=heat.loadWeight||0;
+  var loadTons=loadKg/1000;
 
-  // KPI grid — 3 across, 2 rows
-  var kpis=[
-    {l:'Load Weight',v:heat.loadWeight?heat.loadWeight.toLocaleString()+' kg':'—',c:'#F59E0B'},
-    {l:'Pyrolysis Oil',v:heat.yields?heat.yields.oilKg.toLocaleString()+' L':'—',c:'#F59E0B'},
-    {l:'Carbon Black',v:cbKg?cbKg.toFixed(0)+' kg':'—',c:'#22C55E'},
-    {l:'Wire',v:heat.yields?heat.yields.wireKg+' kg':'—',c:'#94A3B8'},
-    {l:'Total Runtime',v:totalMs?(totalMs/3600000).toFixed(1)+'h':'—',c:'#EA580C'},
-    {l:'Hourly Logs',v:_hdLogs.length+'',c:'#3B82F6'},
-  ];
-  var cols=3, cellW=(W-36)/cols, cellH=76, startY=142;
-  kpis.forEach(function(k,i){
-    var col=i%cols, row=Math.floor(i/cols);
-    var x=18+col*cellW, y=startY+row*cellH;
-    ctx.fillStyle='rgba(255,255,255,0.03)';
-    ctx.beginPath(); ctx.roundRect(x+2,y+2,cellW-8,cellH-8,6); ctx.fill();
-    ctx.fillStyle='rgba(255,255,255,0.25)'; ctx.font='9px Arial'; ctx.fillText(k.l.toUpperCase(),x+10,y+18);
-    ctx.fillStyle=k.c; ctx.font='bold 20px Arial'; ctx.fillText(k.v,x+10,y+44);
-  });
+  function stat(label,val,unit,col,x,y){
+    ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.roundRect(x,y,172,68,8); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='9px Arial'; ctx.fillText(label.toUpperCase(),x+10,y+17);
+    ctx.fillStyle=col; ctx.font='bold 24px Arial'; ctx.fillText(val,x+10,y+46);
+    if(unit){ ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='11px Arial'; ctx.fillText(unit,x+10+ctx.measureText(val).width+4,y+46); }
+  }
 
-  // Phase timeline bar
-  var barY=300, barH=12, barX=18, bW=W-36;
-  ctx.fillStyle='#1E2330';
-  ctx.beginPath(); ctx.roundRect(barX,barY,bW,barH,5); ctx.fill();
+  stat('Load Weight', loadKg?loadKg.toLocaleString():'—', 'kg', '#F59E0B', 18, 148);
+  stat('Pyrolysis Oil', oilL?oilL.toLocaleString():'—', 'L', '#F59E0B', 18, 226);
+  stat('Carbon Black', cbKg?cbKg.toFixed(0):'—', 'kg', '#22C55E', 18, 304);
+  stat('Wire', wireKg?wireKg.toLocaleString():'—', 'kg', '#94A3B8', 18, 382);
+
+  // ── Right column: donut chart for yield composition (x=210) ───────────────────
+  var cx=370, cy=270, R=95, r=58;
+  // Only draw if we have yield data
+  if(oilL>0||cbKg>0||wireKg>0){
+    var totalYield=oilL+cbKg+wireKg||1;
+    var slices=[
+      {v:oilL, c:'#F59E0B', l:'Oil'},
+      {v:cbKg, c:'#22C55E', l:'CB'},
+      {v:wireKg, c:'#94A3B8', l:'Wire'},
+    ].filter(function(s){return s.v>0;});
+    var startAngle=-Math.PI/2;
+    var GAP=0.04;
+    slices.forEach(function(s){
+      var sweep=(s.v/totalYield)*Math.PI*2;
+      var gap=sweep>GAP*3?GAP:0;
+      ctx.beginPath();
+      ctx.moveTo(cx+Math.cos(startAngle+gap/2)*r, cy+Math.sin(startAngle+gap/2)*r);
+      ctx.arc(cx,cy,R,startAngle+gap/2,startAngle+sweep-gap/2);
+      ctx.arc(cx,cy,r,startAngle+sweep-gap/2,startAngle+gap/2,true);
+      ctx.closePath();
+      // Glow
+      ctx.shadowColor=s.c; ctx.shadowBlur=8;
+      ctx.fillStyle=s.c; ctx.fill();
+      ctx.shadowBlur=0;
+      startAngle+=sweep;
+    });
+    // Centre text
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='10px Arial'; ctx.textAlign='center';
+    ctx.fillText('YIELD',cx,cy-8);
+    ctx.fillStyle='white'; ctx.font='bold 18px Arial';
+    ctx.fillText((oilL+cbKg+wireKg).toLocaleString(),cx,cy+10);
+    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Arial'; ctx.fillText('kg+L total',cx,cy+26);
+    ctx.textAlign='left';
+    // Legend
+    var legX=220, legY=388;
+    slices.forEach(function(s,i){
+      ctx.fillStyle=s.c; ctx.beginPath(); ctx.arc(legX,legY+i*18+4,5,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='11px Arial';
+      ctx.fillText(s.l+': '+s.v.toLocaleString()+(s.l==='Oil'?' L':' kg'),legX+12,legY+i*18+8);
+    });
+  } else {
+    // No yields yet — show runtime stats instead
+    ctx.fillStyle='rgba(255,255,255,0.1)'; ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='12px Arial'; ctx.textAlign='center';
+    ctx.fillText('Yields not',cx,cy-8); ctx.fillText('recorded',cx,cy+10); ctx.textAlign='left';
+  }
+
+  // ── Runtime tiles (right side, below donut) ───────────────────────────────────
+  function miniStat(label,val,col,x,y){
+    ctx.fillStyle='rgba(255,255,255,0.07)'; ctx.beginPath(); ctx.roundRect(x,y,80,44,6); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='8px Arial'; ctx.fillText(label.toUpperCase(),x+6,y+13);
+    ctx.fillStyle=col; ctx.font='bold 15px Arial'; ctx.fillText(val,x+6,y+34);
+  }
+  miniStat('Total',totalHrs+'h','#EA580C',210,148);
+  miniStat('Reaction',(reactionMs/3600000).toFixed(1)+'h','#EA580C',298,148);
+  miniStat('Cooldown',(cooldownMs/3600000).toFixed(1)+'h','#3B82F6',386,148);
+  miniStat('Logs',_hdLogs.length+'','#8B5CF6',474,148);
+
+  if(loadKg>0&&oilL>0){
+    miniStat('Oil/ton',(oilL/loadTons).toFixed(0)+' L','#F59E0B',210,200);
+    miniStat('CB/ton',(cbKg/loadTons).toFixed(0)+' kg','#22C55E',298,200);
+  }
+
+  // ── Phase timeline bar (full width) ──────────────────────────────────────────
+  var barY=462, barH=14, barX=18, bW=W-36;
+  ctx.fillStyle='#1a2535'; ctx.beginPath(); ctx.roundRect(barX,barY,bW,barH,5); ctx.fill();
   var xOff=barX;
   PHASES.forEach(function(p){
     if(!heat.phases[p]) return;
     var ms=phaseDurationMs(heat.phases[p]);
-    var w=totalMs>0?Math.max((ms/totalMs*bW),2):0;
+    var w=totalMs>0?Math.max((ms/totalMs*bW),3):0;
     ctx.fillStyle=PH_COLORS[p]||'#888';
     ctx.beginPath(); ctx.roundRect(xOff,barY,w,barH,0); ctx.fill();
     xOff+=w;
   });
-
-  // Phase legend
-  var lx=18, ly=322, li=0;
+  // Phase labels below bar
+  xOff=barX;
   PHASES.forEach(function(p){
-    if(!heat.phases[p]||li>5) return;
-    ctx.fillStyle=PH_COLORS[p]||'#888';
-    ctx.fillRect(lx,ly,8,8);
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='8px Arial';
-    ctx.fillText(PHASE_LABELS[p].substring(0,8),lx+11,ly+8);
-    lx+=80; li++;
+    if(!heat.phases[p]) return;
+    var ms=phaseDurationMs(heat.phases[p]);
+    var w=totalMs>0?Math.max((ms/totalMs*bW),3):0;
+    var pct=totalMs>0?(ms/totalMs*100):0;
+    if(w>30){
+      ctx.fillStyle=PH_COLORS[p]||'#888'; ctx.font='7px Arial'; ctx.textAlign='center';
+      ctx.fillText(pct.toFixed(0)+'%',xOff+w/2,barY+barH+10);
+    }
+    xOff+=w;
   });
+  ctx.textAlign='left';
 
-  // Footer
+  // ── Footer ────────────────────────────────────────────────────────────────────
   ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='9px Arial';
-  ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',18,H-8);
-  ctx.fillStyle='#F59E0B'; ctx.textAlign='right';
+  ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town, South Africa',18,H-8);
+  ctx.fillStyle='rgba(245,158,11,0.5)'; ctx.textAlign='right';
   ctx.fillText('pyro-production.wynanddp.workers.dev',W-18,H-8);
   ctx.textAlign='left';
 }
+
 
 async function shareCanvasById(id){
   var canvas=document.getElementById(id);
