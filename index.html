@@ -3643,7 +3643,7 @@ function renderPhasesCanvas(heat, totalMs){
     ctx.fillText(pct.toFixed(1)+'%',W-18,midY+6);
     ctx.textAlign='left';
     // Row bottom divider
-    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+    ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(0,ry+ROW_H); ctx.lineTo(W,ry+ROW_H); ctx.stroke();
   });
 
@@ -4403,7 +4403,7 @@ async function shareLiveGraphImage(){
   var ctx = canvas.getContext('2d');
 
   // ── Background ───────────────────────────────────────────────────────────────
-  ctx.fillStyle = '#0D1117'; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#0A0D14'; ctx.fillRect(0,0,W,H);
   // Top accent stripe
   var acc = ctx.createLinearGradient(0,0,W,0);
   acc.addColorStop(0,'#F59E0B'); acc.addColorStop(1,'#EA580C');
@@ -4419,16 +4419,16 @@ async function shareLiveGraphImage(){
   ctx.fillStyle='#F59E0B'; ctx.font='bold 15px Arial';
   ctx.fillText('GeT Energy  —  Live Reactor Update', 18, 26);
 
-  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='12px Arial';
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='12px Arial';
   ctx.fillText('R'+heat.reactor+'  ·  Heat #'+heat.heatNumber+'  ·  '+heat.material, 18, 46);
 
-  ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='11px Arial';
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='11px Arial';
   ctx.fillText('Phase: '+(PHASE_LABELS[phase]||phase)+(prodHrs>0?'  ·  Production: '+prodHrs+'h':''), 18, 62);
 
   ctx.textAlign='right';
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='12px Arial';
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='bold 13px Arial';
   ctx.fillText(now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}), W-18, 36);
-  ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px Arial';
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='11px Arial';
   ctx.fillText(now.toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}), W-18, 52);
   ctx.textAlign='left';
 
@@ -4484,7 +4484,7 @@ async function shareLiveGraphImage(){
     var yy=gy(g);
     ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(GX,yy); ctx.lineTo(GX+GW,yy); ctx.stroke();
-    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Arial'; ctx.textAlign='right';
+    ctx.fillStyle='rgba(255,255,255,0.75)'; ctx.font='bold 11px Arial'; ctx.textAlign='right';
     ctx.fillText(g+'°',GX-5,yy+4);
   }
   ctx.textAlign='left';
@@ -4529,14 +4529,16 @@ async function shareLiveGraphImage(){
     ctx.fillStyle=dc; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill();
     if(i%labelEvery===0 && x-lastLabelX>28){
       var lY=Math.max(y-12, GY+14);
-      ctx.fillStyle='white'; ctx.font='bold 11px Arial'; ctx.textAlign='center';
+      ctx.fillStyle='white'; ctx.font='bold 13px Arial'; ctx.textAlign='center';
+      ctx.shadowColor='rgba(0,0,0,0.8)'; ctx.shadowBlur=4;
       ctx.fillText(temps[i]+'°',x,lY);
+      ctx.shadowBlur=0;
       lastLabelX=x;
     }
   }
 
   // X axis time labels
-  ctx.textAlign='center'; ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Arial';
+  ctx.textAlign='center'; ctx.fillStyle='rgba(255,255,255,0.7)'; ctx.font='11px Arial';
   var xStep=Math.max(1,Math.floor(n/7));
   var shown=new Set([0,n-1]);
   for(var i=0;i<n;i+=xStep) shown.add(i);
@@ -4554,7 +4556,7 @@ async function shareLiveGraphImage(){
     ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1; ctx.beginPath(); ctx.roundRect(12,OY+4,W-24,OIL_H-8,10); ctx.stroke();
 
     // Section title (left)
-    ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='bold 10px Arial';
+    ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.font='bold 11px Arial';
     ctx.fillText('OIL LEVEL IN CONDENSER', 30, OY+22);
 
     var maxOil=10000, pct=Math.min(oilLevel/maxOil,1);
@@ -4589,14 +4591,15 @@ async function shareLiveGraphImage(){
     // ── Value (right side, vertically centred in panel) ───────────────────────
     var valX = TX+TW+60;
     var midY = OY+OIL_H/2;
-    ctx.fillStyle=oilCol; ctx.font='bold 48px Arial'; ctx.textAlign='left';
-    ctx.fillText(Number(oilLevel).toLocaleString(),valX,midY+10);
-    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 18px Arial';
-    ctx.fillText('L',valX+ctx.measureText(Number(oilLevel).toLocaleString()).width+6,midY+10);
-    ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px Arial';
-    ctx.fillText(Math.round(pct*100)+'% of condenser capacity',valX,midY+32);
+    var oilStr = Number(oilLevel).toLocaleString()+' L';
+    ctx.fillStyle=oilCol; ctx.font='bold 52px Arial'; ctx.textAlign='left';
+    ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=8;
+    ctx.fillText(oilStr,valX,midY+14);
+    ctx.shadowBlur=0;
+    ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='bold 12px Arial';
+    ctx.fillText(Math.round(pct*100)+'% of condenser capacity',valX,midY+36);
     if(lastOilLog){
-      ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='10px Arial';
+      ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='11px Arial';
       ctx.fillText('Last reading: '+new Date(lastOilLog.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),valX,midY+50);
     }
   }
