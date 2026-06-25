@@ -545,22 +545,21 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 
 <!-- New Heat Modal -->
 <div class="modal-overlay" id="modal-new-heat">
-  <div class="modal-sheet">
+  <div class="modal-sheet" style="max-height:90vh;overflow-y:auto;">
     <div class="modal-handle"></div>
     <div class="modal-title" id="new-heat-title">Start New Heat</div>
     <div class="form-group">
       <label class="form-label">Heat Number</label>
-      <input class="form-input" id="heat-number-input" type="text" placeholder="e.g. 322" inputmode="numeric">
+      <input class="form-input" id="heat-number-input" type="text" placeholder="e.g. 327" inputmode="numeric">
     </div>
-    <div class="form-group">
-      <label class="form-label">Feed Material</label>
-      <select class="form-select" id="heat-material-select">
-        <option value="Passenger Tyres">Passenger Tyres</option>
-        <option value="Truck Tyres">Truck Tyres</option>
-        <option value="Mixed Tyres">Mixed Tyres</option>
-        <option value="OTR Tyres">OTR Tyres</option>
-        <option value="Other">Other</option>
-      </select>
+    <!-- Feed materials list -->
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Feed Materials</div>
+    <div id="new-heat-feeds-list" style="margin-bottom:8px;"></div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;" onclick="addNewHeatFeedRow()">+ Add Feed Material</button>
+    <!-- Total weight display -->
+    <div id="new-heat-total" style="background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:none;">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Total Load Weight</div>
+      <div id="new-heat-total-val" style="font-size:22px;font-weight:800;color:var(--amber);"></div>
     </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-new-heat')">Cancel</button>
@@ -683,18 +682,13 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <input class="form-input" id="edit-heat-number" type="text" inputmode="numeric">
     </div>
     <div class="form-group">
-      <label class="form-label">Feed Material</label>
-      <select class="form-select" id="edit-heat-material">
-        <option value="Passenger Tyres">Passenger Tyres</option>
-        <option value="Truck Tyres">Truck Tyres</option>
-        <option value="Mixed Tyres">Mixed Tyres</option>
-        <option value="OTR Tyres">OTR Tyres</option>
-        <option value="Other">Other</option>
-      </select>
+      <label class="form-label">Feed Materials & Weights</label>
+      <div id="edit-heat-feeds-list" style="margin-bottom:6px;"></div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;" onclick="addEditHeatFeedRow()">+ Add Feed</button>
     </div>
-    <div class="form-group">
-      <label class="form-label">Load Weight (kg)</label>
-      <input class="form-input" id="edit-heat-weight" type="number" inputmode="decimal" step="0.1">
+    <div id="edit-heat-total" style="background:var(--surface2);border-radius:8px;padding:8px 12px;margin-bottom:8px;display:none;">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;">Total Weight</div>
+      <div id="edit-heat-total-val" style="font-size:18px;font-weight:800;color:var(--amber);"></div>
     </div>
 
     <!-- Phase times -->
@@ -1353,6 +1347,17 @@ function renderReactorDetail(r){
   renderStickyAction(heat, phase);
 }
 
+// Returns a display string for feeds: "Passenger Tyres 8,000kg + Truck Tyres 4,000kg (12,000kg total)"
+function feedSummary(heat, short){
+  if(heat.feeds&&heat.feeds.length>0){
+    if(short) return heat.feeds.map(function(f){return f.material;}).join(' + ');
+    var parts=heat.feeds.map(function(f){return f.material+(f.weight?' '+f.weight.toLocaleString()+'kg':'');});
+    var total=heat.feeds.reduce(function(s,f){return s+(f.weight||0);},0);
+    return parts.join(' + ')+(total>0?' ('+total.toLocaleString()+'kg total)':'');
+  }
+  return (heat.material||'—')+(heat.loadWeight?' '+heat.loadWeight.toLocaleString()+'kg':'');
+}
+
 function revertLastPhase(heatId){
   if(!confirm('Revert to previous phase? The last phase transition will be undone.')) return;
   var db=getDB();
@@ -1723,6 +1728,38 @@ function reopenHeat(heatId){
   saveDB(db); syncToServer(); renderReactorDetail(currentReactor);
 }
 
+function addEditHeatFeedRow(material, weight){
+  var list=document.getElementById('edit-heat-feeds-list');
+  if(!list) return;
+  var row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:6px;';
+  var sel=document.createElement('select'); sel.className='form-select'; sel.style.flex='1';
+  FEED_MATERIALS.forEach(function(m){
+    var o=document.createElement('option'); o.value=m; o.textContent=m;
+    if(m===material) o.selected=true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change',updateEditHeatTotal);
+  var inp=document.createElement('input'); inp.className='form-input'; inp.type='number'; inp.inputMode='numeric';
+  inp.placeholder='kg'; inp.style.cssText='width:90px;flex-shrink:0;'; inp.value=weight||'';
+  inp.addEventListener('input',updateEditHeatTotal);
+  var removeBtn=document.createElement('button'); removeBtn.textContent='×'; removeBtn.type='button';
+  removeBtn.style.cssText='background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:0 4px;flex-shrink:0;';
+  removeBtn.addEventListener('click',function(){ if(list.children.length>1) list.removeChild(row); updateEditHeatTotal(); });
+  row.appendChild(sel); row.appendChild(inp); row.appendChild(removeBtn);
+  list.appendChild(row); updateEditHeatTotal();
+}
+
+function updateEditHeatTotal(){
+  var list=document.getElementById('edit-heat-feeds-list');
+  var totalEl=document.getElementById('edit-heat-total');
+  var totalVal=document.getElementById('edit-heat-total-val');
+  if(!list||!totalEl||!totalVal) return;
+  var total=0;
+  Array.from(list.children).forEach(function(row){ var inp=row.querySelector('input'); if(inp&&inp.value) total+=parseFloat(inp.value)||0; });
+  if(total>0){ totalEl.style.display=''; totalVal.textContent=total.toLocaleString()+' kg'; }
+  else totalEl.style.display='none';
+}
+
 // Opens edit for current reactor's heat (active or most recent complete)
 function openEditCurrentHeat(){
   var db=getDB();
@@ -1737,23 +1774,103 @@ function openEditCurrentHeat(){
 }
 
 // ═══════════════ NEW HEAT ═══════════════
+var FEED_MATERIALS = ['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres','Shredder Waste','Other'];
+
+function addNewHeatFeedRow(material, weight){
+  var list = document.getElementById('new-heat-feeds-list');
+  if(!list) return;
+  var row = document.createElement('div');
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:8px;';
+  // Material select
+  var sel = document.createElement('select');
+  sel.className = 'form-select'; sel.style.flex = '1';
+  FEED_MATERIALS.forEach(function(m){
+    var o = document.createElement('option'); o.value=m; o.textContent=m;
+    if(m===material) o.selected=true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', updateNewHeatTotal);
+  // Weight input
+  var inp = document.createElement('input');
+  inp.className='form-input'; inp.type='number'; inp.inputMode='numeric';
+  inp.placeholder='kg'; inp.style.cssText='width:90px;flex-shrink:0;';
+  inp.value = weight||'';
+  inp.addEventListener('input', updateNewHeatTotal);
+  // Remove button
+  var removeBtn = document.createElement('button');
+  removeBtn.textContent='×'; removeBtn.type='button';
+  removeBtn.style.cssText='background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:0 4px;flex-shrink:0;';
+  removeBtn.addEventListener('click',function(){
+    list.removeChild(row);
+    updateNewHeatTotal();
+    // Always keep at least one row
+    if(list.children.length===0) addNewHeatFeedRow();
+  });
+  row.appendChild(sel); row.appendChild(inp); row.appendChild(removeBtn);
+  list.appendChild(row);
+  updateNewHeatTotal();
+}
+
+function updateNewHeatTotal(){
+  var list = document.getElementById('new-heat-feeds-list');
+  var totalEl = document.getElementById('new-heat-total');
+  var totalVal = document.getElementById('new-heat-total-val');
+  if(!list||!totalEl||!totalVal) return;
+  var total = 0;
+  Array.from(list.children).forEach(function(row){
+    var inp = row.querySelector('input');
+    if(inp && inp.value) total += parseFloat(inp.value)||0;
+  });
+  if(total > 0){
+    totalEl.style.display='';
+    totalVal.textContent = total.toLocaleString()+' kg';
+  } else {
+    totalEl.style.display='none';
+  }
+}
+
+function getNewHeatFeeds(){
+  var list = document.getElementById('new-heat-feeds-list');
+  if(!list) return [];
+  var feeds = [];
+  Array.from(list.children).forEach(function(row){
+    var sel = row.querySelector('select');
+    var inp = row.querySelector('input');
+    if(sel && inp && inp.value){
+      feeds.push({ material: sel.value, weight: parseFloat(inp.value)||0 });
+    }
+  });
+  return feeds;
+}
+
 function openNewHeatModal(r){
   currentReactor = r;
   document.getElementById('new-heat-title').textContent = 'Start New Heat — Reactor '+r;
   document.getElementById('heat-number-input').value='';
+  // Clear and add one feed row
+  var list = document.getElementById('new-heat-feeds-list');
+  if(list) list.innerHTML='';
+  document.getElementById('new-heat-total').style.display='none';
+  addNewHeatFeedRow();
   document.getElementById('modal-new-heat').classList.add('open');
 }
 
 function startNewHeat(){
   const num = document.getElementById('heat-number-input').value.trim();
-  const mat = document.getElementById('heat-material-select').value;
   if(!num){ alert('Please enter a heat number'); return; }
+  const feeds = getNewHeatFeeds();
+  if(!feeds.length){ alert('Please add at least one feed material'); return; }
+  // Build summary material string for backward compat display
+  var mat = feeds.length===1 ? feeds[0].material : feeds.map(function(f){return f.material;}).join(' + ');
+  var totalLoadWeight = feeds.reduce(function(sum,f){return sum+f.weight;},0) || null;
   const db = getDB();
   const shift = getActiveShift();
   const now = new Date().toISOString();
   const heat = {
     id: genId(), heatNumber: num, reactor: currentReactor,
-    material: mat, loadWeight: null,
+    material: mat,          // summary string e.g. "Passenger Tyres + Truck Tyres"
+    feeds: feeds,           // [{material, weight}, ...] — full detail
+    loadWeight: totalLoadWeight,
     shiftId: shift?shift.id:null, supervisor: shift?shift.supervisor:'Unknown',
     crew: shift?shift.crew:[],
     status:'loading',
@@ -1765,6 +1882,7 @@ function startNewHeat(){
   saveDB(db);
   closeModal('modal-new-heat');
   navigate('reactor');
+  syncToServer();
 }
 
 // ═══════════════ HOURLY LOG ═══════════════
@@ -1928,8 +2046,20 @@ function saveEditHeat(){
   if(!heat){ var ah=getActiveHeat(currentReactor); if(ah) heat=db.heats.find(function(h){return h.id===ah.id;}); }
   if(!heat) return;
   heat.heatNumber=document.getElementById('edit-heat-number').value.trim()||heat.heatNumber;
-  heat.material=document.getElementById('edit-heat-material').value;
-  heat.loadWeight=parseFloat(document.getElementById('edit-heat-weight').value)||heat.loadWeight;
+  // Save multi-feed data
+  var editFeedList2=document.getElementById('edit-heat-feeds-list');
+  if(editFeedList2){
+    var editFeeds=[];
+    Array.from(editFeedList2.children).forEach(function(row){
+      var sel=row.querySelector('select'); var inp=row.querySelector('input');
+      if(sel&&inp&&inp.value) editFeeds.push({material:sel.value,weight:parseFloat(inp.value)||0});
+    });
+    if(editFeeds.length){
+      heat.feeds=editFeeds;
+      heat.material=editFeeds.length===1?editFeeds[0].material:editFeeds.map(function(f){return f.material;}).join(' + ');
+      heat.loadWeight=editFeeds.reduce(function(s,f){return s+f.weight;},0)||null;
+    }
+  }
   // Save phase times
   PHASES.forEach(function(p){
     var startEl=document.getElementById('edit-phase-start-'+p);
@@ -1971,8 +2101,13 @@ function openEditHeatModal(heatId){
   if(!heat) return;
   _editHeatForLogs=heat;
   document.getElementById('edit-heat-number').value=heat.heatNumber||'';
-  document.getElementById('edit-heat-material').value=heat.material||'Passenger Tyres';
-  document.getElementById('edit-heat-weight').value=heat.loadWeight||'';
+  // Populate multi-feed list
+  var editFeedList=document.getElementById('edit-heat-feeds-list');
+  if(editFeedList){
+    editFeedList.innerHTML='';
+    var feedsToLoad=heat.feeds&&heat.feeds.length?heat.feeds:[{material:heat.material||'Passenger Tyres',weight:heat.loadWeight||''}];
+    feedsToLoad.forEach(function(f){ addEditHeatFeedRow(f.material,f.weight); });
+  }
   var phaseTimes=document.getElementById('edit-phase-times'); phaseTimes.innerHTML='';
   var toLocalDT=function(iso){ if(!iso) return ''; var d=new Date(iso),off=d.getTimezoneOffset(),local=new Date(d.getTime()-off*60000); return local.toISOString().slice(0,16); };
   PHASES.forEach(function(p){
@@ -3237,9 +3372,18 @@ function renderHeatOverview(heat){
   var reactionMs = heat.phases&&heat.phases.reaction ? phaseDurationMs(heat.phases.reaction) : 0;
   var reactionHrs = (reactionMs/3600000).toFixed(1);
 
+  // Build load weight display — show per-feed breakdown if multiple
+  var loadDisplay;
+  if(heat.feeds&&heat.feeds.length>1){
+    loadDisplay=heat.feeds.map(function(f){return f.material.split(' ')[0]+': '+f.weight.toLocaleString()+'kg';}).join(' / ');
+  } else {
+    loadDisplay=heat.loadWeight?heat.loadWeight.toLocaleString()+' kg':'—';
+  }
+  var totalLoadKg=heat.loadWeight||(heat.feeds?heat.feeds.reduce(function(s,f){return s+(f.weight||0);},0):0);
+
   var kpis = [
     {icon:'📅',label:'Date',val:heat.createdAt?new Date(heat.createdAt).toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}):'—',col:'#94A3B8'},
-    {icon:'⚖️',label:'Load Weight',val:heat.loadWeight?heat.loadWeight.toLocaleString()+' kg':'—',col:'#F59E0B'},
+    {icon:'⚖️',label:'Total Feed Weight',val:totalLoadKg?totalLoadKg.toLocaleString()+' kg':'—',col:'#F59E0B'},
     {icon:'🛢',label:'Pyrolysis Oil',val:heat.yields?heat.yields.oilKg.toLocaleString()+' L':'—',col:'#F59E0B'},
     {icon:'📦',label:'Carbon Black',val:_hdCbKg?_hdCbKg.toFixed(0)+' kg':'—',col:'#22C55E'},
     {icon:'🔩',label:'Wire',val:heat.yields?heat.yields.wireKg+' kg':'—',col:'#94A3B8'},
@@ -3259,9 +3403,29 @@ function renderHeatOverview(heat){
 
   // Yield per ton efficiency if we have load weight
   el2.innerHTML = '';
-  if(heat.loadWeight&&heat.yields){
-    // loadWeight is in kg, convert to tons for yield calculation
-    var loadTons = heat.loadWeight/1000;
+  // Show feed breakdown card if multiple feeds
+  if(heat.feeds&&heat.feeds.length>1){
+    var feedBreakdown=document.createElement('div');
+    feedBreakdown.style.cssText='background:var(--surface2);border-radius:10px;padding:12px;margin-top:8px;';
+    feedBreakdown.innerHTML='<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Feed Breakdown</div>';
+    var totalW=heat.feeds.reduce(function(s,f){return s+(f.weight||0);},0);
+    heat.feeds.forEach(function(f){
+      var pct=totalW>0?((f.weight||0)/totalW*100).toFixed(0):0;
+      var row=document.createElement('div'); row.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid var(--border);font-size:13px;';
+      row.innerHTML='<span style="color:var(--text);">'+f.material+'</span>'
+        +'<span><strong style="color:var(--amber);">'+(f.weight||0).toLocaleString()+' kg</strong>'
+        +' <span style="color:var(--muted);font-size:11px;">('+pct+'%)</span></span>';
+      feedBreakdown.appendChild(row);
+    });
+    var totalRow=document.createElement('div'); totalRow.style.cssText='display:flex;justify-content:space-between;padding:6px 0 0;font-size:13px;font-weight:700;';
+    totalRow.innerHTML='<span style="color:var(--amber);">Total</span><span style="color:var(--amber);">'+totalW.toLocaleString()+' kg</span>';
+    feedBreakdown.appendChild(totalRow);
+    el2.appendChild(feedBreakdown);
+  }
+
+  var _totalLoadKg = heat.loadWeight||(heat.feeds?heat.feeds.reduce(function(s,f){return s+(f.weight||0);},0):0);
+  if(_totalLoadKg&&heat.yields){
+    var loadTons = _totalLoadKg/1000;
     var oilPerTon = loadTons>0?(heat.yields.oilKg/loadTons).toFixed(1):'—';
     var cbPerTon = loadTons>0?(_hdCbKg/loadTons).toFixed(1):'—';
     var eff = document.createElement('div');
@@ -3709,7 +3873,7 @@ function renderHeatCard(heat, cbKg, totalMs){
   ctx.beginPath(); ctx.moveTo(16,146); ctx.lineTo(W-16,146); ctx.stroke();
 
   // ── Yield data ────────────────────────────────────────────────────────────────
-  var loadKg=heat.loadWeight||0;
+  var loadKg=heat.loadWeight||(heat.feeds?heat.feeds.reduce(function(s,f){return s+(f.weight||0);},0):0);
   var oilL=heat.yields?heat.yields.oilKg:0;
   var wireKg=heat.yields?(heat.yields.wireKg||0):0;
   var hasYields=oilL>0||cbKg>0||wireKg>0;
