@@ -974,7 +974,7 @@ function saveDB(db){
   }
   localStorage.setItem('py_db', JSON.stringify(dbCopy));
 }
-function getSettings(){ try{ const s=JSON.parse(localStorage.getItem('py_settings'))||{}; if(!s.supervisors) s.supervisors=['Bongisani','Nkosingipiwe','Phillip','Eric','Lhine','Kganu','Luckman','Kleiman']; if(!s.feedMaterials) s.feedMaterials=['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres']; if(!s.positions) s.positions=['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance']; if(!s.people) s.people=[]; return s; }catch(e){ return {supervisors:[],feedMaterials:[],positions:['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance'],people:[]}; } }
+function getSettings(){ try{ const s=JSON.parse(localStorage.getItem('py_settings'))||{}; if(!s.supervisors) s.supervisors=['Bongisani','Nkosingipiwe','Phillip','Eric','Lhine','Kganu','Luckman','Kleiman']; if(!s.feedMaterials) s.feedMaterials=['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres','Shredder Waste','Solar Panels','Other']; if(!s.positions) s.positions=['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance']; if(!s.people) s.people=[]; return s; }catch(e){ return {supervisors:[],feedMaterials:[],positions:['Plant Manager','Shift Supervisor','Shift Assistant','Operator','Maintenance'],people:[]}; } }
 
 // ── STATE ──
 let currentReactor = 1;
@@ -1733,7 +1733,7 @@ function addEditHeatFeedRow(material, weight){
   if(!list) return;
   var row=document.createElement('div'); row.style.cssText='display:flex;gap:6px;align-items:center;margin-bottom:6px;';
   var sel=document.createElement('select'); sel.className='form-select'; sel.style.flex='1';
-  FEED_MATERIALS.forEach(function(m){
+  getFeedMaterialNames().forEach(function(m){
     var o=document.createElement('option'); o.value=m; o.textContent=m;
     if(m===material) o.selected=true;
     sel.appendChild(o);
@@ -1774,7 +1774,19 @@ function openEditCurrentHeat(){
 }
 
 // ═══════════════ NEW HEAT ═══════════════
-var FEED_MATERIALS = ['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres','Shredder Waste','Other'];
+// Feed materials come from Admin settings — not hardcoded
+// Falls back to defaults if none registered yet
+function getFeedMaterialNames(){
+  var s = getSettings();
+  var registered = s.feedMaterials;
+  // Defensive: handle double-serialized string from server
+  if(typeof registered === 'string'){
+    try{ registered = JSON.parse(registered); }catch(e){ registered = []; }
+  }
+  if(Array.isArray(registered) && registered.length) return registered;
+  // Fall back to defaults only if nothing registered
+  return ['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres','Shredder Waste','Solar Panels','Other'];
+}
 
 function addNewHeatFeedRow(material, weight){
   var list = document.getElementById('new-heat-feeds-list');
@@ -1784,7 +1796,7 @@ function addNewHeatFeedRow(material, weight){
   // Material select
   var sel = document.createElement('select');
   sel.className = 'form-select'; sel.style.flex = '1';
-  FEED_MATERIALS.forEach(function(m){
+  getFeedMaterialNames().forEach(function(m){
     var o = document.createElement('option'); o.value=m; o.textContent=m;
     if(m===material) o.selected=true;
     sel.appendChild(o);
@@ -2700,7 +2712,7 @@ function adminSaveReactorNames(){
 
 function syncMaterialSelects(){
   const s = getSettings();
-  const mats = s.feedMaterials||['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres'];
+  const mats = getFeedMaterialNames();
   ['heat-material-select','edit-heat-material'].forEach(id=>{
     const sel = document.getElementById(id);
     if(!sel) return;
@@ -2807,7 +2819,14 @@ async function pullFromServer(){
     if(remote.settings && typeof remote.settings==='object'){
       const ls=getSettings();
       const merged_s={...ls};
-      Object.entries(remote.settings).forEach(([k,v])=>{ if(v!=null) merged_s[k]=v; });
+      Object.entries(remote.settings).forEach(([k,v])=>{
+        if(v==null) return;
+        // Server sometimes double-serializes JSON values — unwrap if needed
+        if(typeof v==='string' && (v.startsWith('[') || v.startsWith('{'))){
+          try{ v=JSON.parse(v); }catch(e){}
+        }
+        merged_s[k]=v;
+      });
       localStorage.setItem('py_settings',JSON.stringify(merged_s));
     }
     showSyncStatus('✅ Pulled from server','var(--green)');
