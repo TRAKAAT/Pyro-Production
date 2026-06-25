@@ -4380,199 +4380,235 @@ async function shareLiveGraphImage(){
     || db.heats.filter(function(h){ return h.reactor===currentReactor; }).sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); })[0];
   if(!heat){ alert('No active heat'); return; }
 
-  var logs = db.hourlyLogs.filter(function(l){ return l.heatId===heat.id; })
-    .sort(function(a,b){ return new Date(a.timestamp)-new Date(b.timestamp); })
-    .filter(function(l){ return l.temp>0; });
-
-  if(!logs.length){ alert('No temperature readings to share yet'); return; }
+  var logs = db.hourlyLogs.filter(function(l){ return l.heatId===heat.id&&l.temp>0; })
+    .sort(function(a,b){ return new Date(a.timestamp)-new Date(b.timestamp); });
+  if(!logs.length){ alert('No temperature readings yet'); return; }
 
   var lastOilLog = db.hourlyLogs.filter(function(l){ return l.heatId===heat.id&&l.oilLevel>0; })
     .sort(function(a,b){ return new Date(a.timestamp)-new Date(b.timestamp); }).pop();
   var oilLevel = lastOilLog ? lastOilLog.oilLevel : null;
+  var hasOil = oilLevel !== null;
 
-  // Canvas dimensions
-  var W=600, GRAPH_H=300, GAUGE_H=oilLevel!==null?220:0, PAD_BETWEEN=oilLevel!==null?16:0;
-  var HEADER_H=70, FOOTER_H=36;
-  var H=HEADER_H+GRAPH_H+PAD_BETWEEN+GAUGE_H+FOOTER_H;
+  // ── Layout ──────────────────────────────────────────────────────────────────
+  var W = 600;
+  var HEADER = 80;
+  var GRAPH_H = 280;  // graph area total height
+  var DIVIDER = hasOil ? 24 : 0;
+  var OIL_H = hasOil ? 160 : 0;
+  var FOOTER = 32;
+  var H = HEADER + GRAPH_H + DIVIDER + OIL_H + FOOTER;
 
-  var canvas=document.createElement('canvas');
-  canvas.width=W; canvas.height=H;
-  var ctx=canvas.getContext('2d');
+  var canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext('2d');
 
-  // Background
-  var bg=ctx.createLinearGradient(0,0,0,H);
-  bg.addColorStop(0,'#0A0E1A'); bg.addColorStop(1,'#0D1525');
-  ctx.fillStyle=bg; ctx.fillRect(0,0,W,H);
-  var acc=ctx.createLinearGradient(0,0,W,0);
-  acc.addColorStop(0,'#F59E0B'); acc.addColorStop(0.5,'#EA580C'); acc.addColorStop(1,'#F59E0B');
-  ctx.fillStyle=acc; ctx.fillRect(0,0,W,5);
+  // ── Background ───────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#0D1117'; ctx.fillRect(0,0,W,H);
+  // Top accent stripe
+  var acc = ctx.createLinearGradient(0,0,W,0);
+  acc.addColorStop(0,'#F59E0B'); acc.addColorStop(1,'#EA580C');
+  ctx.fillStyle = acc; ctx.fillRect(0,0,W,4);
 
-  // Header
-  ctx.fillStyle='#F59E0B'; ctx.font='bold 14px Arial'; ctx.fillText('GeT Energy — Live Reactor Update',16,24);
-  ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='12px Arial';
-  var now=new Date();
-  ctx.fillText('R'+heat.reactor+' · Heat #'+heat.heatNumber+' · '+heat.material,16,42);
-  ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px Arial'; ctx.textAlign='right';
-  ctx.fillText(now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})+' · '+now.toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}),W-16,42);
+  // ── HEADER ───────────────────────────────────────────────────────────────────
+  var now = new Date();
+  var prodMs = heat.phases&&heat.phases.reaction&&heat.phases.reaction.startTime
+    ? now - new Date(heat.phases.reaction.startTime) : 0;
+  var prodHrs = Math.floor(prodMs/3600000);
+  var phase = currentPhaseOf(heat)||heat.status||'—';
+
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 15px Arial';
+  ctx.fillText('GeT Energy  —  Live Reactor Update', 18, 26);
+
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='12px Arial';
+  ctx.fillText('R'+heat.reactor+'  ·  Heat #'+heat.heatNumber+'  ·  '+heat.material, 18, 46);
+
+  ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='11px Arial';
+  ctx.fillText('Phase: '+(PHASE_LABELS[phase]||phase)+(prodHrs>0?'  ·  Production: '+prodHrs+'h':''), 18, 62);
+
+  ctx.textAlign='right';
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='12px Arial';
+  ctx.fillText(now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}), W-18, 36);
+  ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px Arial';
+  ctx.fillText(now.toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}), W-18, 52);
   ctx.textAlign='left';
 
-  // Phase + production time info
-  var phase=currentPhaseOf(heat)||heat.status||'—';
-  var prodMs=heat.phases&&heat.phases.reaction&&heat.phases.reaction.startTime?Date.now()-new Date(heat.phases.reaction.startTime).getTime():0;
-  var prodHrs=prodMs>0?Math.floor(prodMs/3600000):0;
-  var phaseLabel=PHASE_LABELS[phase]||phase;
-  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='11px Arial';
-  ctx.fillText('Phase: '+phaseLabel+(prodHrs>0?' · Production: '+prodHrs+'h':''),16,58);
+  // divider under header
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,HEADER-4); ctx.lineTo(W,HEADER-4); ctx.stroke();
 
-  // ── Temperature graph ──────────────────────────────────────────────────────
-  var GY=HEADER_H, GH=GRAPH_H-28; // leave room for x-axis labels
+  // ── TEMPERATURE GRAPH ────────────────────────────────────────────────────────
+  var LPAD=52, RPAD=20, TPAD=24, BPAD=36;
+  var GX=LPAD, GY=HEADER+TPAD, GW=W-LPAD-RPAD, GH=GRAPH_H-TPAD-BPAD;
+
   var temps=logs.map(function(l){return l.temp;});
   var times=logs.map(function(l){return new Date(l.timestamp);});
+  var n=temps.length;
   var maxT=Math.max.apply(null,temps);
   var rawMin=Math.min.apply(null,temps);
-  var rawRange=maxT-rawMin;
-  var topPad=Math.max(Math.round(rawRange*0.15),25);
-  var botPad=Math.max(Math.round(rawRange*0.10),10);
-  var displayMax=maxT+topPad;
-  var minT=Math.max(0,rawMin-botPad);
-  var range=Math.max(displayMax-minT,1);
+  var topPad=Math.max(Math.round((maxT-rawMin)*0.18),30);
+  var botPad=Math.max(Math.round((maxT-rawMin)*0.08),10);
+  var dispMax=maxT+topPad, minT=Math.max(0,rawMin-botPad);
+  var range=Math.max(dispMax-minT,1);
 
-  var LPAD=46,RPAD=16;
-  var n=logs.length;
+  function gx(i){ return GX+i*(GW/Math.max(n-1,1)); }
+  function gy(t){ return GY+GH*(1-(t-minT)/range); }
 
-  function px(i){ return LPAD+i*(W-LPAD-RPAD)/(Math.max(n-1,1)); }
-  function py(t){ return GY+GH*(1-(t-minT)/range); }
+  // Phase background bands
+  var rxStart=heat.phases&&heat.phases.reaction&&heat.phases.reaction.startTime
+    ?new Date(heat.phases.reaction.startTime).getTime():null;
+  var cdStart=heat.phases&&heat.phases.cooldown&&heat.phases.cooldown.startTime
+    ?new Date(heat.phases.cooldown.startTime).getTime():null;
 
-  // Phase colours for dots
-  var rxStart=heat.phases&&heat.phases.reaction&&heat.phases.reaction.startTime?new Date(heat.phases.reaction.startTime).getTime():null;
-  var cdStart=heat.phases&&heat.phases.cooldown&&heat.phases.cooldown.startTime?new Date(heat.phases.cooldown.startTime).getTime():null;
+  // Find index boundaries for phase bands
+  var rxIdx=-1,cdIdx=-1;
+  for(var i=0;i<n;i++){
+    if(rxIdx<0&&rxStart&&times[i].getTime()>=rxStart) rxIdx=i;
+    if(cdIdx<0&&cdStart&&times[i].getTime()>=cdStart) cdIdx=i;
+  }
+  function bandX1(idx){ return idx>=0?gx(idx):GX; }
+  function bandX2(idx){ return idx>=0?gx(idx):GX+GW; }
 
-  function phaseColour(i){
-    var t=times[i].getTime();
-    if(cdStart&&t>=cdStart) return '#3B82F6';
-    if(rxStart&&t>=rxStart) return '#EA580C';
-    return '#F59E0B';
+  if(rxIdx>=0){
+    ctx.fillStyle='rgba(234,88,12,0.10)';
+    ctx.fillRect(bandX1(rxIdx),GY,bandX2(cdIdx>=0?cdIdx:n)-bandX1(rxIdx),GH);
+  }
+  if(cdIdx>=0){
+    ctx.fillStyle='rgba(59,130,246,0.10)';
+    ctx.fillRect(bandX1(cdIdx),GY,GX+GW-bandX1(cdIdx),GH);
   }
 
-  // Grid lines
-  var step=range<=100?20:range<=300?50:100;
-  for(var gt=Math.ceil(minT/step)*step;gt<=displayMax;gt+=step){
-    var gy=py(gt);
-    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(LPAD,gy); ctx.lineTo(W-RPAD,gy); ctx.stroke();
+  // Horizontal grid lines + Y labels
+  var step=range<=150?25:range<=300?50:range<=500?100:200;
+  var firstGrid=Math.ceil(minT/step)*step;
+  for(var g=firstGrid;g<=dispMax;g+=step){
+    var yy=gy(g);
+    ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(GX,yy); ctx.lineTo(GX+GW,yy); ctx.stroke();
     ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Arial'; ctx.textAlign='right';
-    ctx.fillText(gt+'°',LPAD-5,gy+4);
+    ctx.fillText(g+'°',GX-5,yy+4);
   }
   ctx.textAlign='left';
 
-  // Phase zones
-  if(rxStart){
-    var rxStartIdx=0;
-    for(var i=0;i<n;i++){ if(times[i].getTime()>=rxStart){rxStartIdx=i;break;} }
-    var cdStartIdx=n;
-    if(cdStart){ for(var i=0;i<n;i++){ if(times[i].getTime()>=cdStart){cdStartIdx=i;break;} } }
-    if(rxStartIdx<n){
-      ctx.fillStyle='rgba(234,88,12,0.08)'; ctx.fillRect(px(rxStartIdx),GY,px(Math.min(cdStartIdx,n-1))-px(rxStartIdx),GH);
-    }
-    if(cdStartIdx<n){
-      ctx.fillStyle='rgba(59,130,246,0.08)'; ctx.fillRect(px(cdStartIdx),GY,(W-RPAD)-px(cdStartIdx),GH);
-    }
-  }
-
-  // Gradient fill
+  // Gradient fill under line
   ctx.save();
-  ctx.beginPath(); ctx.moveTo(px(0),py(temps[0]));
-  for(var i=1;i<n;i++) ctx.lineTo(px(i),py(temps[i]));
-  ctx.lineTo(px(n-1),GY+GH); ctx.lineTo(px(0),GY+GH); ctx.closePath();
+  ctx.beginPath(); ctx.moveTo(gx(0),gy(temps[0]));
+  for(var i=1;i<n;i++) ctx.lineTo(gx(i),gy(temps[i]));
+  ctx.lineTo(gx(n-1),GY+GH); ctx.lineTo(gx(0),GY+GH); ctx.closePath();
   var fillG=ctx.createLinearGradient(0,GY,0,GY+GH);
-  fillG.addColorStop(0,'rgba(234,88,12,0.5)'); fillG.addColorStop(1,'rgba(234,88,12,0)');
+  fillG.addColorStop(0,'rgba(234,88,12,0.45)');
+  fillG.addColorStop(1,'rgba(234,88,12,0.02)');
   ctx.fillStyle=fillG; ctx.fill(); ctx.restore();
 
   // Line
   ctx.strokeStyle='#EA580C'; ctx.lineWidth=2.5; ctx.lineJoin='round'; ctx.lineCap='round';
-  ctx.beginPath(); ctx.moveTo(px(0),py(temps[0]));
-  for(var i=1;i<n;i++) ctx.lineTo(px(i),py(temps[i]));
+  ctx.beginPath(); ctx.moveTo(gx(0),gy(temps[0]));
+  for(var i=1;i<n;i++) ctx.lineTo(gx(i),gy(temps[i]));
   ctx.stroke();
 
-  // Dots + labels
-  var labelEvery=n<=8?1:n<=16?2:3;
+  // Phase divider lines
+  function phaseLine(idx,col,label){
+    if(idx<0||idx>=n) return;
+    var x=gx(idx);
+    ctx.save(); ctx.strokeStyle=col; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(x,GY); ctx.lineTo(x,GY+GH); ctx.stroke(); ctx.restore();
+    ctx.fillStyle=col; ctx.font='bold 9px Arial'; ctx.textAlign='center';
+    ctx.fillText(label,x,GY-5);
+  }
+  phaseLine(rxIdx,'rgba(234,88,12,0.8)','Reaction');
+  phaseLine(cdIdx,'rgba(59,130,246,0.9)','Cooldown');
+  ctx.textAlign='left';
+
+  // Dots + temp labels — stagger labels to avoid overlap
+  var labelEvery=n<=10?1:n<=20?2:3;
+  var lastLabelX=-99;
   for(var i=0;i<n;i++){
-    var x=px(i),y=py(temps[i]);
-    var col=phaseColour(i);
-    ctx.fillStyle='#0D0F14'; ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle=col; ctx.beginPath(); ctx.arc(x,y,4.5,0,Math.PI*2); ctx.fill();
-    if(i%labelEvery===0){
+    var x=gx(i),y=gy(temps[i]);
+    var t2=times[i].getTime();
+    var dc=cdStart&&t2>=cdStart?'#3B82F6':rxStart&&t2>=rxStart?'#EA580C':'#F59E0B';
+    ctx.fillStyle='#0D1117'; ctx.beginPath(); ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=dc; ctx.beginPath(); ctx.arc(x,y,4,0,Math.PI*2); ctx.fill();
+    if(i%labelEvery===0 && x-lastLabelX>28){
+      var lY=Math.max(y-12, GY+14);
       ctx.fillStyle='white'; ctx.font='bold 11px Arial'; ctx.textAlign='center';
-      ctx.fillText(temps[i]+'°',x,Math.max(y-11,GY+14));
+      ctx.fillText(temps[i]+'°',x,lY);
+      lastLabelX=x;
     }
   }
 
   // X axis time labels
-  var showIdx=new Set([0,n-1]);
+  ctx.textAlign='center'; ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='10px Arial';
   var xStep=Math.max(1,Math.floor(n/7));
-  for(var i=0;i<n;i+=xStep) showIdx.add(i);
-  showIdx.forEach(function(i){
+  var shown=new Set([0,n-1]);
+  for(var i=0;i<n;i+=xStep) shown.add(i);
+  shown.forEach(function(i){
     if(i>=n) return;
-    ctx.fillStyle='rgba(255,255,255,0.45)'; ctx.font='10px Arial'; ctx.textAlign='center';
-    ctx.fillText(times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),px(i),GY+GH+16);
+    ctx.fillText(times[i].toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),gx(i),GY+GH+20);
   });
   ctx.textAlign='left';
 
-  // ── Oil gauge ──────────────────────────────────────────────────────────────
-  if(oilLevel!==null){
-    var gaugeY=HEADER_H+GRAPH_H+PAD_BETWEEN;
-    ctx.fillStyle='rgba(255,255,255,0.04)'; ctx.beginPath(); ctx.roundRect(16,gaugeY,W-32,GAUGE_H-8,10); ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.08)'; ctx.lineWidth=1; ctx.beginPath(); ctx.roundRect(16,gaugeY,W-32,GAUGE_H-8,10); ctx.stroke();
+  // ── OIL PANEL ────────────────────────────────────────────────────────────────
+  if(hasOil){
+    var OY = HEADER+GRAPH_H+DIVIDER;
+    // Panel background
+    ctx.fillStyle='rgba(255,255,255,0.03)'; ctx.beginPath(); ctx.roundRect(12,OY+4,W-24,OIL_H-8,10); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1; ctx.beginPath(); ctx.roundRect(12,OY+4,W-24,OIL_H-8,10); ctx.stroke();
 
-    ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='bold 11px Arial'; ctx.textAlign='center';
-    ctx.fillText('OIL LEVEL IN CONDENSER',W/2,gaugeY+18);
+    // Section title (left)
+    ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='bold 10px Arial';
+    ctx.fillText('OIL LEVEL IN CONDENSER', 30, OY+22);
 
-    // Tube
     var maxOil=10000, pct=Math.min(oilLevel/maxOil,1);
     var oilCol=pct<0.3?'#EA580C':pct<0.6?'#F59E0B':'#22C55E';
-    var tx=W/2-22,ty=gaugeY+26,tw=44,th=GAUGE_H-60,tr=8;
 
-    ctx.fillStyle='rgba(255,255,255,0.05)'; ctx.beginPath(); ctx.roundRect(tx,ty,tw,th,tr); ctx.fill();
-    ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.roundRect(tx,ty,tw,th,tr); ctx.stroke();
+    // ── Tube (left side) ──────────────────────────────────────────────────────
+    var TX=40, TY=OY+30, TW=34, TH=OIL_H-44, TR=7;
+    ctx.fillStyle='rgba(255,255,255,0.05)'; ctx.beginPath(); ctx.roundRect(TX,TY,TW,TH,TR); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.roundRect(TX,TY,TW,TH,TR); ctx.stroke();
 
-    var fillH=Math.round(th*pct);
+    var fillH=Math.round(TH*pct);
     if(fillH>2){
-      ctx.save();
-      ctx.beginPath(); ctx.roundRect(tx,ty,tw,th,tr); ctx.clip();
-      var oilGrad=ctx.createLinearGradient(0,ty,0,ty+th);
-      oilGrad.addColorStop(0,oilCol); oilGrad.addColorStop(1,oilCol+'88');
-      ctx.fillStyle=oilGrad; ctx.fillRect(tx,ty+th-fillH,tw,fillH);
-      // sheen
-      ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.fillRect(tx+6,ty+th-fillH+4,8,Math.min(fillH-8,th-8));
+      ctx.save(); ctx.beginPath(); ctx.roundRect(TX,TY,TW,TH,TR); ctx.clip();
+      var oilGrad=ctx.createLinearGradient(0,TY,0,TY+TH);
+      oilGrad.addColorStop(0,oilCol); oilGrad.addColorStop(1,oilCol+'66');
+      ctx.fillStyle=oilGrad; ctx.fillRect(TX,TY+TH-fillH,TW,fillH);
+      ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(TX+5,TY+TH-fillH+4,7,Math.min(fillH-10,TH-10));
       ctx.restore();
-      // surface line
-      ctx.strokeStyle=oilCol; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(tx,ty+th-fillH); ctx.lineTo(tx+tw,ty+th-fillH); ctx.stroke();
+      ctx.strokeStyle=oilCol+'cc'; ctx.lineWidth=2;
+      ctx.beginPath(); ctx.moveTo(TX,TY+TH-fillH); ctx.lineTo(TX+TW,TY+TH-fillH); ctx.stroke();
     }
 
     // Scale markers
     [0,2000,4000,6000,8000,10000].forEach(function(v){
-      var f=v/maxOil, my=ty+th-th*f;
-      ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1;
-      ctx.beginPath(); ctx.moveTo(tx+tw+3,my); ctx.lineTo(tx+tw+9,my); ctx.stroke();
-      ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='9px Arial'; ctx.textAlign='left';
-      ctx.fillText(v===0?'0':v/1000+'k',tx+tw+12,my+4);
+      var f=v/maxOil, my=TY+TH-TH*f;
+      ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(TX+TW+3,my); ctx.lineTo(TX+TW+9,my); ctx.stroke();
+      ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='9px Arial'; ctx.textAlign='left';
+      ctx.fillText(v===0?'0':v/1000+'k',TX+TW+12,my+4);
     });
 
-    // Value
-    ctx.fillStyle=oilCol; ctx.font='bold 28px Arial'; ctx.textAlign='center';
-    ctx.fillText(Number(oilLevel).toLocaleString()+' L',W/2+40,ty+th/2+10);
-    ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='10px Arial';
-    ctx.fillText(Math.round(pct*100)+'% capacity',W/2+40,ty+th/2+28);
+    // ── Value (right side, vertically centred in panel) ───────────────────────
+    var valX = TX+TW+60;
+    var midY = OY+OIL_H/2;
+    ctx.fillStyle=oilCol; ctx.font='bold 48px Arial'; ctx.textAlign='left';
+    ctx.fillText(Number(oilLevel).toLocaleString(),valX,midY+10);
+    ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.font='bold 18px Arial';
+    ctx.fillText('L',valX+ctx.measureText(Number(oilLevel).toLocaleString()).width+6,midY+10);
+    ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.font='11px Arial';
+    ctx.fillText(Math.round(pct*100)+'% of condenser capacity',valX,midY+32);
+    if(lastOilLog){
+      ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='10px Arial';
+      ctx.fillText('Last reading: '+new Date(lastOilLog.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),valX,midY+50);
+    }
   }
 
-  // Footer
-  ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.font='9px Arial'; ctx.textAlign='left';
-  ctx.fillText('GeT Energy (Pty) Ltd · Atlantis Industrial · Cape Town',16,H-10);
+  // ── FOOTER ───────────────────────────────────────────────────────────────────
+  var FY=H-14;
+  ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='9px Arial'; ctx.textAlign='left';
+  ctx.fillText('GeT Energy (Pty) Ltd  ·  Atlantis Industrial  ·  Cape Town',18,FY);
   ctx.fillStyle='rgba(245,158,11,0.4)'; ctx.textAlign='right';
-  ctx.fillText('pyro-production.wynanddp.workers.dev',W-16,H-10);
+  ctx.fillText('pyro-production.wynanddp.workers.dev',W-18,FY);
   ctx.textAlign='left';
 
-  // Share
   shareCanvasDirect(canvas);
 }
 
