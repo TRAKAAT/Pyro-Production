@@ -189,8 +189,8 @@ textarea.form-input { min-height: 80px; resize: vertical; }
 /* ── FILTER PILLS ── */
 .filter-row { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 12px; scrollbar-width: none; }
 .filter-row::-webkit-scrollbar { display: none; }
-.filter-pill { flex-shrink: 0; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface2); color: var(--textDim); font-size: 13px; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
-.filter-pill.active { background: var(--amber); color: #000; border-color: var(--amber); font-weight: 600; }
+.filter-pill { flex-shrink: 0; padding: 8px 18px; border-radius: 20px; border: 2px solid var(--border); background: var(--surface2); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.2s; }
+.filter-pill.active { background: var(--amber); color: #1a1200; border-color: var(--amber); font-weight: 800; }
 
 /* ── BIG ACTION BUTTON (sticky bottom in reactor detail) ── */
 .sticky-action { padding: 12px 16px 4px; }
@@ -552,15 +552,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <label class="form-label">Heat Number</label>
       <input class="form-input" id="heat-number-input" type="text" placeholder="e.g. 327" inputmode="numeric">
     </div>
-    <!-- Feed materials list -->
-    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Feed Materials</div>
+    <!-- Feed materials — no weights yet, captured at end of loading -->
+    <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Feed Materials to Load</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Weights are captured when loading is complete.</div>
     <div id="new-heat-feeds-list" style="margin-bottom:8px;"></div>
     <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;" onclick="addNewHeatFeedRow()">+ Add Feed Material</button>
-    <!-- Total weight display -->
-    <div id="new-heat-total" style="background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:14px;display:none;">
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Total Load Weight</div>
-      <div id="new-heat-total-val" style="font-size:22px;font-weight:800;color:var(--amber);"></div>
-    </div>
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn btn-ghost" onclick="closeModal('modal-new-heat')">Cancel</button>
       <button class="btn btn-amber" onclick="startNewHeat()">Begin Loading</button>
@@ -1293,7 +1289,7 @@ function renderReactorDetail(r){
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:center">
         <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px" onclick="openEditCurrentHeat()">✏️ Edit Heat</button>
         <button class="btn btn-ghost btn-sm" style="width:auto;padding:6px 14px;color:var(--red);" onclick="revertLastPhase(getActiveHeat(currentReactor)&&getActiveHeat(currentReactor).id)">↩ Revert Phase</button>
-        ${(phase==='reaction'||phase==='cooldown')?`<button class="btn btn-ghost-amber btn-sm" style="width:auto;padding:6px 14px" onclick="openHourlyLogModal()">📊 Hourly Log</button>`:''}
+        ${(phase==='reaction'||phase==='cooldown')?`<button class="btn btn-amber" style="width:auto;padding:10px 20px;font-size:15px;font-weight:800;" onclick="openHourlyLogModal()">📊 + Log Reading</button>`:''}
       </div>`;
   } else {
     phaseEl.innerHTML = `
@@ -1526,7 +1522,14 @@ function promptAdvancePhase(phase, nextPhase){
 
   let body = '';
   if(phase==='loading'){
-    body = '<div class="form-group"><label class="form-label">Final Load Weight (kg)</label><input class="form-input" id="advance-load-weight" type="number" placeholder="e.g. 17500" inputmode="numeric" step="1" style="margin-top:4px"></div>';
+    const heat2=getActiveHeat(currentReactor);
+    const feeds2=heat2&&heat2.feeds&&heat2.feeds.length?heat2.feeds:[{material:heat2?heat2.material:'Feed',weight:0}];
+    var feedInputs='<div style="font-size:12px;color:var(--muted);margin-bottom:10px;">Enter the weight for each material loaded:</div>';
+    feeds2.forEach(function(f,i){
+      feedInputs+='<div class="form-group"><label class="form-label">'+f.material+' (kg)</label>'
+        +'<input class="form-input advance-feed-weight" data-idx="'+i+'" type="number" placeholder="e.g. 8500" inputmode="numeric" step="1" style="margin-top:4px;"></div>';
+    });
+    body = feedInputs;
   }
   if(phase==='purging'){
     body = '<div style="color:var(--muted);font-size:14px;margin-bottom:12px">⚠️ Confirm pre-start checklist has been completed before proceeding to ignition.</div>';
@@ -1555,10 +1558,23 @@ function confirmAdvancePhase(){
 
   heat.phases[phase].endTime = new Date().toISOString();
 
-  // Capture load weight when loading ends
+  // Capture per-feed weights when loading ends
   if(phase==='loading'){
-    const wtEl=document.getElementById('advance-load-weight');
-    if(wtEl&&wtEl.value) heat.loadWeight=parseFloat(wtEl.value)||null;
+    const feedWtEls=document.querySelectorAll('.advance-feed-weight');
+    if(feedWtEls.length){
+      var totalW=0;
+      feedWtEls.forEach(function(el){
+        var idx=parseInt(el.dataset.idx)||0;
+        var w=parseFloat(el.value)||0;
+        if(heat.feeds&&heat.feeds[idx]) heat.feeds[idx].weight=w;
+        totalW+=w;
+      });
+      heat.loadWeight=totalW||null;
+      // Update material summary string
+      if(heat.feeds&&heat.feeds.length){
+        heat.material=heat.feeds.map(function(f){return f.material;}).join(' + ');
+      }
+    }
   }
 
   if(nextPhase){
@@ -1788,12 +1804,12 @@ function getFeedMaterialNames(){
   return ['Passenger Tyres','Truck Tyres','Mixed Tyres','OTR Tyres','Shredder Waste','Solar Panels','Other'];
 }
 
-function addNewHeatFeedRow(material, weight){
+function addNewHeatFeedRow(material){
   var list = document.getElementById('new-heat-feeds-list');
   if(!list) return;
   var row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:8px;';
-  // Material select
+  // Material select only — no weight yet
   var sel = document.createElement('select');
   sel.className = 'form-select'; sel.style.flex = '1';
   getFeedMaterialNames().forEach(function(m){
@@ -1801,26 +1817,16 @@ function addNewHeatFeedRow(material, weight){
     if(m===material) o.selected=true;
     sel.appendChild(o);
   });
-  sel.addEventListener('change', updateNewHeatTotal);
-  // Weight input
-  var inp = document.createElement('input');
-  inp.className='form-input'; inp.type='number'; inp.inputMode='numeric';
-  inp.placeholder='kg'; inp.style.cssText='width:90px;flex-shrink:0;';
-  inp.value = weight||'';
-  inp.addEventListener('input', updateNewHeatTotal);
   // Remove button
   var removeBtn = document.createElement('button');
   removeBtn.textContent='×'; removeBtn.type='button';
   removeBtn.style.cssText='background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:0 4px;flex-shrink:0;';
   removeBtn.addEventListener('click',function(){
     list.removeChild(row);
-    updateNewHeatTotal();
-    // Always keep at least one row
     if(list.children.length===0) addNewHeatFeedRow();
   });
-  row.appendChild(sel); row.appendChild(inp); row.appendChild(removeBtn);
+  row.appendChild(sel); row.appendChild(removeBtn);
   list.appendChild(row);
-  updateNewHeatTotal();
 }
 
 function updateNewHeatTotal(){
@@ -1870,11 +1876,15 @@ function openNewHeatModal(r){
 function startNewHeat(){
   const num = document.getElementById('heat-number-input').value.trim();
   if(!num){ alert('Please enter a heat number'); return; }
-  const feeds = getNewHeatFeeds();
-  if(!feeds.length){ alert('Please add at least one feed material'); return; }
-  // Build summary material string for backward compat display
-  var mat = feeds.length===1 ? feeds[0].material : feeds.map(function(f){return f.material;}).join(' + ');
-  var totalLoadWeight = feeds.reduce(function(sum,f){return sum+f.weight;},0) || null;
+  // Get selected materials (no weights yet — captured at end of loading)
+  var feedList = document.getElementById('new-heat-feeds-list');
+  var feedMaterials = feedList ? Array.from(feedList.children).map(function(row){
+    var sel=row.querySelector('select'); return sel?sel.value:null;
+  }).filter(Boolean) : [];
+  if(!feedMaterials.length){ alert('Please add at least one feed material'); return; }
+  var mat = feedMaterials.length===1 ? feedMaterials[0] : feedMaterials.join(' + ');
+  var feeds = feedMaterials.map(function(m){ return {material:m, weight:0}; });
+  var totalLoadWeight = null; // will be set when loading ends
   const db = getDB();
   const shift = getActiveShift();
   const now = new Date().toISOString();
@@ -2252,7 +2262,13 @@ function populateShiftCrewSelect(){
   const sel=document.getElementById('shift-crew-select');
   if(!sel) return;
   sel.innerHTML='<option value="">— Add person —</option>';
-  (s.people||[]).forEach(function(p){ const o=document.createElement('option'); o.value=p.name; o.textContent=p.name+(p.role?' ('+p.role+')':''); sel.appendChild(o); });
+  // Combine registered people AND supervisors list
+  var crewOptions=[];
+  (s.people||[]).forEach(function(p){ crewOptions.push({name:p.name,label:p.name+(p.role?' ('+p.role+')':'')}); });
+  (s.supervisors||[]).forEach(function(name){
+    if(!crewOptions.find(function(c){return c.name===name;})) crewOptions.push({name:name,label:name});
+  });
+  crewOptions.forEach(function(p){ const o=document.createElement('option'); o.value=p.name; o.textContent=p.label; sel.appendChild(o); });
 }
 function openStartShiftModal(){
   _shiftCrew=[];
@@ -4108,20 +4124,45 @@ function renderStockPanel(){
   el.innerHTML = '';
 
   // Monthly target card
+  // Calculate oil used in reactor (in-progress heats that have logged oil)
+  var monthOilSold = 0;
+  sdb.sales.filter(function(s){ return s.product==='oil' && s.date && s.date.startsWith(now.getFullYear()+'-'+(now.getMonth()+1<10?'0':'')+(now.getMonth()+1)); })
+    .forEach(function(s){ monthOilSold+=(s.qty||0); });
+
+  var oilCard = document.createElement('div');
+  oilCard.className = 'card';
+  oilCard.style.marginBottom='12px';
+  var oilCardHtml = '<div class="card-title">🛢 Monthly Oil — '+now.toLocaleDateString('en-ZA',{month:'long',year:'numeric'})+'</div>';
+
+  // Progress bar vs target
   if(oilTarget>0){
-    var targetCard = document.createElement('div');
-    targetCard.className = 'card';
-    targetCard.innerHTML = '<div class="card-title">📅 Monthly Oil Target — '+now.toLocaleDateString('en-ZA',{month:'long',year:'numeric'})+'</div>'
-      +'<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px;">'
-      +'<span style="color:var(--muted)">Produced: <strong style="color:var(--amber)">'+monthOil.toLocaleString()+' L</strong></span>'
-      +'<span style="color:var(--muted)">Target: <strong>'+oilTarget.toLocaleString()+' L</strong></span>'
+    oilCardHtml += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">'
+      +'<span style="color:var(--muted);">Production vs Target</span>'
+      +'<span style="color:var(--amber);font-weight:700;">'+oilPct.toFixed(0)+'%</span>'
       +'</div>'
-      +'<div style="background:var(--surface2);border-radius:6px;height:14px;overflow:hidden;">'
+      +'<div style="background:var(--surface2);border-radius:6px;height:12px;overflow:hidden;margin-bottom:12px;">'
       +'<div style="height:100%;border-radius:6px;background:linear-gradient(90deg,#F59E0B,#EA580C);width:'+oilPct.toFixed(1)+'%;transition:width .5s;"></div>'
-      +'</div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-top:4px;">'+oilPct.toFixed(1)+'% of target achieved</div>';
-    el.appendChild(targetCard);
+      +'</div>';
   }
+
+  // Three-row breakdown
+  var oilRemaining = Math.max(0, monthOil - monthOilSold);
+  var rows = [
+    {label:'Produced this month', val:monthOil, col:'#F59E0B'},
+    {label:'Sold this month',     val:monthOilSold, col:'#22C55E'},
+    {label:'Available in stock',  val:oilRemaining, col:'#3B82F6'},
+  ];
+  if(oilTarget>0) rows.push({label:'Monthly target', val:oilTarget, col:'rgba(255,255,255,0.3)'});
+
+  rows.forEach(function(r){
+    oilCardHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);">'
+      +'<span style="font-size:13px;color:var(--muted);">'+r.label+'</span>'
+      +'<span style="font-size:16px;font-weight:800;color:'+r.col+';">'+r.val.toLocaleString()+' L</span>'
+      +'</div>';
+  });
+
+  oilCard.innerHTML = oilCardHtml;
+  el.appendChild(oilCard);
 
   // Stock tiles
   var tiles = [
