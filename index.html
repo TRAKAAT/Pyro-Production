@@ -1871,7 +1871,8 @@ function openNewHeatModal(r){
   // Clear and add one feed row
   var list = document.getElementById('new-heat-feeds-list');
   if(list) list.innerHTML='';
-  document.getElementById('new-heat-total').style.display='none';
+  var totalEl = document.getElementById('new-heat-total');
+  if(totalEl) totalEl.style.display='none';
   addNewHeatFeedRow();
   document.getElementById('modal-new-heat').classList.add('open');
 }
