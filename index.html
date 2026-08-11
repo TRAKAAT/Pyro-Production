@@ -658,6 +658,11 @@ textarea.form-input { min-height: 80px; resize: vertical; }
       <input class="form-input" id="yield-steel" type="number" placeholder="0" inputmode="decimal">
     </div>
     <div class="form-group">
+      <label class="form-label">Other Products</label>
+      <div id="extra-product-list"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="addExtraProduct()">+ Add Product</button>
+    </div>
+    <div class="form-group">
       <label class="form-label">Notes / Issues</label>
       <textarea class="form-input" id="yield-notes" placeholder="Any issues with this heat..."></textarea>
     </div>
@@ -805,6 +810,7 @@ textarea.form-input { min-height: 80px; resize: vertical; }
         <option value="cb">Carbon Black</option>
         <option value="wire">Wire</option>
         <option value="steel">Steel</option>
+        <option value="aluminium">Aluminium</option>
       </select>
     </div>
     <div class="form-group">
@@ -1435,7 +1441,8 @@ function renderYieldCard(heat){
     <div class="card-row"><span class="card-row-label">Oil Yield</span><span class="card-row-value" style="color:var(--amber)">${y.oilKg||0} L</span></div>
     <div class="card-row"><span class="card-row-label">Carbon Black</span><span class="card-row-value" style="color:var(--green)">${cbTotal.toFixed(1)} kg (${(y.cbBags||[]).length} bags)</span></div>
     <div class="card-row"><span class="card-row-label">Steel Wire</span><span class="card-row-value">${y.wireKg||0} kg</span></div>
-    <div class="card-row"><span class="card-row-label">Heavy Steel</span><span class="card-row-value">${y.steelKg||0} kg</span></div>`;
+    <div class="card-row"><span class="card-row-label">Heavy Steel</span><span class="card-row-value">${y.steelKg||0} kg</span></div>
+    ${(y.extraProducts||[]).map(p=>`<div class="card-row"><span class="card-row-label">${p.name}</span><span class="card-row-value" style="color:#94A3B8">${p.qty} kg</span></div>`).join('')}`;
 }
 
 function getProductionHours(heat){
@@ -2018,12 +2025,27 @@ function submitHourlyLog(){
 // ═══════════════ END OF RUN ═══════════════
 function openEndRunModal(){
   cbBagCount=0;
+  extraProductCount=0;
   document.getElementById('yield-oil').value='';
   document.getElementById('yield-wire').value='';
   document.getElementById('yield-steel').value='';
   document.getElementById('yield-notes').value='';
   document.getElementById('cb-bag-list').innerHTML='';
+  document.getElementById('extra-product-list').innerHTML='';
   document.getElementById('modal-end-run').classList.add('open');
+}
+
+var extraProductCount=0;
+function addExtraProduct(name){
+  extraProductCount++;
+  const n=extraProductCount;
+  const div=document.createElement('div');
+  div.style.cssText='display:flex;gap:8px;margin-bottom:8px;align-items:center';
+  div.innerHTML=`
+    <input class="form-input" style="flex:1.4" placeholder="Product name (e.g. Aluminium)" id="ep-name-${n}" type="text" value="${name||''}">
+    <input class="form-input" style="flex:1" placeholder="kg" id="ep-qty-${n}" type="number" inputmode="decimal">
+    <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;color:var(--red);font-size:20px;cursor:pointer;padding:0 4px;flex-shrink:0;">×</button>`;
+  document.getElementById('extra-product-list').appendChild(div);
 }
 
 function addCBBag(){
@@ -2047,11 +2069,21 @@ function submitEndRun(){
     const wt=parseFloat(document.getElementById('cb-wt-'+i)?.value||0);
     if(wt>0) bags.push({id:genId(),bagNum:i,tagNum:tag,weight:wt});
   }
+  const extraProducts=[];
+  for(let i=1;i<=extraProductCount;i++){
+    const nameEl=document.getElementById('ep-name-'+i);
+    const qtyEl=document.getElementById('ep-qty-'+i);
+    if(!nameEl||!qtyEl) continue;
+    const name=(nameEl.value||'').trim();
+    const qty=parseFloat(qtyEl.value)||0;
+    if(name&&qty>0) extraProducts.push({id:genId(),name,qty});
+  }
   heat.yields={
     oilKg:parseFloat(document.getElementById('yield-oil').value)||0,
     wireKg:parseFloat(document.getElementById('yield-wire').value)||0,
     steelKg:parseFloat(document.getElementById('yield-steel').value)||0,
     cbBags:bags,
+    extraProducts:extraProducts,
     notes:document.getElementById('yield-notes').value,
   };
   // End deslag phase
@@ -2527,6 +2559,29 @@ function renderStats(){
       </div>`;
   }
 
+  // Other products (aluminium etc.) totalled by name
+  const extraTotals={};
+  heats.forEach(h=>{
+    (h.yields?.extraProducts||[]).forEach(p=>{
+      extraTotals[p.name]=(extraTotals[p.name]||0)+(parseFloat(p.qty)||0);
+    });
+  });
+  const extraEntries=Object.entries(extraTotals);
+  if(extraEntries.length){
+    el.innerHTML+=`
+      <div class="chart-container">
+        <div class="chart-title">Other Products</div>
+        <div class="bar-chart">
+          ${extraEntries.map(([name,qty])=>`
+            <div class="bar-row">
+              <div class="bar-label" style="width:90px">${name}</div>
+              <div class="bar-track"><div class="bar-fill" style="width:100%;background:#94A3B8">${qty.toFixed(0)}kg</div></div>
+              <div class="bar-val">${qty.toFixed(0)} kg</div>
+            </div>`).join('')}
+        </div>
+      </div>`;
+  }
+
   // Temperature trend SVG
   if(logs.length>1){
     const temps=logs.map(l=>l.temp).filter(t=>t>0);
@@ -2584,6 +2639,7 @@ function renderHistory(){
         ${h.yields?`<div style="margin-top:10px;display:flex;gap:12px;flex-wrap:wrap">
           <span style="font-size:13px;color:var(--amber)">🛢 ${h.yields.oilKg}L oil</span>
           <span style="font-size:13px;color:var(--green)">📦 ${cbKg.toFixed(0)}kg CB</span>
+          ${(h.yields.extraProducts||[]).map(p=>`<span style="font-size:13px;color:#94A3B8">🔷 ${p.qty}kg ${p.name}</span>`).join('')}
           <span style="font-size:13px;color:var(--muted)">⏱ ${(totalMs/3600000).toFixed(2)}h total</span>
         </div>`:''}
       </div>`;
@@ -2792,7 +2848,7 @@ function getServerUrl(){ return (localStorage.getItem('py_server_url')||'').trim
 function setServerUrl(url){ localStorage.setItem('py_server_url', url.trim()); }
 function showSyncStatus(msg, color){
   let el = document.getElementById('sync-status');
-  if(!el){ el=document.createElement('div'); el.id='sync-status'; el.style.cssText='position:fixed;top:10px;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:6px 16px;font-size:12px;z-index:999;transition:opacity 0.5s;white-space:nowrap;'; document.body.appendChild(el); }
+  if(!el){ el=document.createElement('div'); el.id='sync-status'; el.style.cssText='position:fixed;bottom:90px;left:50%;transform:translateX(-50%);background:var(--surface2);border:1px solid var(--border);border-radius:20px;padding:6px 16px;font-size:12px;z-index:999;transition:opacity 0.5s;white-space:nowrap;pointer-events:none;'; document.body.appendChild(el); }
   el.textContent=msg; el.style.color=color||'var(--text)'; el.style.opacity='1';
   clearTimeout(el._t); el._t=setTimeout(()=>{ el.style.opacity='0'; }, 3000);
 }
@@ -2895,13 +2951,19 @@ function saveServerUrl(){
 
 
 // ════════════ TEMPERATURE GRAPH ════════════
-function renderTempGraph(logs){
-  const card=document.getElementById('temp-graph-card');
-  const container=document.getElementById('temp-graph-container');
-  if(!card||!container) return;
+function renderTempGraph(logs, opts){
+  opts = opts || {};
+  const cardId = opts.cardId !== undefined ? opts.cardId : 'temp-graph-card';
+  const containerId = opts.containerId || 'temp-graph-container';
+  const card = cardId ? document.getElementById(cardId) : null;
+  const container=document.getElementById(containerId);
+  if(!container || (cardId && !card)) return;
   const validLogs=logs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
-  if(validLogs.length<2){ card.style.display='none'; return; }
-  card.style.display='';
+  if(validLogs.length<2){
+    if(card){ card.style.display='none'; } else { container.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);">Not enough temperature readings to plot yet</div>'; }
+    return;
+  }
+  if(card) card.style.display='';
 
   const temps=validLogs.map(function(l){return l.temp;});
   const times=validLogs.map(function(l){return new Date(l.timestamp);});
@@ -2933,16 +2995,22 @@ function renderTempGraph(logs){
 
   // Determine phase for each point (for colouring)
   var rxStart2 = null, cdStart2 = null;
-  // Get from DB if available
-  try {
-    var db2=getDB();
-    var h2=db2.heats.find(function(h){return h.reactor===currentReactor&&(h.status!=='complete'||true);});
-    if(!h2) h2=db2.heats.filter(function(h){return h.reactor===currentReactor;}).sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);})[0];
-    if(h2){
-      if(h2.phases&&h2.phases.reaction&&h2.phases.reaction.startTime) rxStart2=new Date(h2.phases.reaction.startTime).getTime();
-      if(h2.phases&&h2.phases.cooldown&&h2.phases.cooldown.startTime) cdStart2=new Date(h2.phases.cooldown.startTime).getTime();
-    }
-  } catch(e){}
+  if(opts.phasesHeat){
+    var h2 = opts.phasesHeat;
+    if(h2.phases&&h2.phases.reaction&&h2.phases.reaction.startTime) rxStart2=new Date(h2.phases.reaction.startTime).getTime();
+    if(h2.phases&&h2.phases.cooldown&&h2.phases.cooldown.startTime) cdStart2=new Date(h2.phases.cooldown.startTime).getTime();
+  } else {
+    // Fall back to the live/current heat on this reactor
+    try {
+      var db2=getDB();
+      var h2b=db2.heats.find(function(h){return h.reactor===currentReactor&&(h.status!=='complete'||true);});
+      if(!h2b) h2b=db2.heats.filter(function(h){return h.reactor===currentReactor;}).sort(function(a,b){return new Date(b.createdAt)-new Date(a.createdAt);})[0];
+      if(h2b){
+        if(h2b.phases&&h2b.phases.reaction&&h2b.phases.reaction.startTime) rxStart2=new Date(h2b.phases.reaction.startTime).getTime();
+        if(h2b.phases&&h2b.phases.cooldown&&h2b.phases.cooldown.startTime) cdStart2=new Date(h2b.phases.cooldown.startTime).getTime();
+      }
+    } catch(e){}
+  }
 
   var svg='<svg viewBox="0 0 '+W+' '+TOTAL_H+'" width="'+W+'px" height="'+TOTAL_H+'px" style="display:block;min-width:'+W+'px">';
 
@@ -2986,8 +3054,8 @@ function renderTempGraph(logs){
   container.innerHTML=svg;
   container.style.overflowX='auto';
 
-  // Also render oil gauge if last log has oil level
-  renderOilGauge(logs);
+  // Also render oil gauge if last log has oil level (live monitoring screen only)
+  if(card) renderOilGauge(logs);
 }
 
 function renderOilGauge(logs){
@@ -3430,6 +3498,9 @@ function renderHeatOverview(heat){
     {icon:'🔥',label:'Reaction Time',val:reactionHrs+'h',col:'#EA580C'},
     {icon:'❄️',label:'Cooldown Time',val:heat.phases&&heat.phases.cooldown?fmtDurationHrs(phaseDurationMs(heat.phases.cooldown))+'h':'—',col:'#3B82F6'},
   ];
+  (heat.yields&&heat.yields.extraProducts||[]).forEach(function(p){
+    kpis.push({icon:'🔷',label:p.name,val:p.qty+' kg',col:'#94A3B8'});
+  });
 
   el.innerHTML = '';
   kpis.forEach(function(k){
@@ -3555,7 +3626,7 @@ function renderHeatTempTab(logs){
   if(!el) return;
   var validLogs = logs.filter(function(l){ return l.temp>0; });
   if(!validLogs.length){ el.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);">No temperature readings recorded</div>'; return; }
-  renderTempGraph(validLogs, 'hd-temp-graph');
+  renderTempGraph(validLogs, {cardId:null, containerId:'hd-temp-graph', phasesHeat:_hdHeat});
   if(statsEl && validLogs.length){
     var temps = validLogs.map(function(l){return l.temp;});
     var maxT=Math.max.apply(null,temps);
