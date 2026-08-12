@@ -384,6 +384,15 @@ textarea.form-input { min-height: 80px; resize: vertical; }
     </div>
   </div>
 
+  <!-- Diagnostics -->
+  <div class="section-label">Diagnostics</div>
+  <div class="card">
+    <div style="font-size:12px;color:var(--muted);margin-bottom:10px">Shows every active (non-completed) heat currently stored for each reactor — including any duplicates. Pulls fresh from the server first.</div>
+    <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="showActiveHeatsDiagnostic()">🔍 Show Active Heats (Both Reactors)</button>
+    <pre id="diagnostic-output" style="display:none;font-size:11px;white-space:pre-wrap;word-break:break-all;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;max-height:400px;overflow-y:auto;"></pre>
+    <button class="btn btn-amber btn-sm" id="diagnostic-copy-btn" style="width:100%;margin-top:8px;display:none" onclick="copyDiagnosticOutput()">📋 Copy to Clipboard</button>
+  </div>
+
   <!-- Positions -->
   <div class="section-label">Positions / Roles</div>
   <div class="card">
@@ -2913,6 +2922,60 @@ async function syncToServer(){
     });
     showSyncStatus('✅ Synced','var(--green)');
   }catch(e){ showSyncStatus('⚠ Sync failed','var(--amber)'); }
+}
+
+async function showActiveHeatsDiagnostic(){
+  const out = document.getElementById('diagnostic-output');
+  const copyBtn = document.getElementById('diagnostic-copy-btn');
+  out.style.display='';
+  out.textContent = 'Pulling latest from server...';
+  const url = getServerUrl();
+  let heats = [];
+  try {
+    if(url){
+      const res = await fetch(url+'/pull');
+      if(res.ok){ const remote = await res.json(); heats = remote.heats||[]; }
+      else { out.textContent = 'Pull failed (HTTP '+res.status+'). Showing local data instead.\n\n'; heats = getDB().heats; }
+    } else {
+      out.textContent = 'No server URL configured. Showing local data only.\n\n';
+      heats = getDB().heats;
+    }
+  } catch(e){
+    out.textContent = 'Pull failed: '+e.message+'. Showing local data instead.\n\n';
+    heats = getDB().heats;
+  }
+  let text = '';
+  [1,2].forEach(function(r){
+    const active = heats.filter(function(h){ return h.reactor===r && h.status!=='complete'; })
+      .sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); });
+    text += '── REACTOR '+r+' — '+active.length+' active heat record(s) ──\n';
+    if(!active.length) text += '  (none — reactor is idle)\n';
+    active.forEach(function(h,i){
+      text += '\n  ['+(i===0?'MOST RECENT — this is what the app shows':'OLDER / ORPHANED')+']\n';
+      text += '  id: '+h.id+'\n';
+      text += '  heatNumber: '+h.heatNumber+'\n';
+      text += '  status: '+h.status+'\n';
+      text += '  createdAt: '+h.createdAt+'\n';
+      text += '  phases:\n';
+      PHASES.forEach(function(p){
+        if(h.phases && h.phases[p]){
+          text += '    '+p+': start='+(h.phases[p].startTime||'—')+' end='+(h.phases[p].endTime||'—')+'\n';
+        }
+      });
+    });
+    text += '\n';
+  });
+  out.textContent += text;
+  copyBtn.style.display='';
+}
+
+function copyDiagnosticOutput(){
+  const out = document.getElementById('diagnostic-output');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(out.textContent).then(function(){ alert('Copied — paste it in the chat.'); }).catch(function(){ alert('Copy failed — please select and copy the text manually.'); });
+  } else {
+    alert('Copy not supported on this browser — please select and copy the text manually.');
+  }
 }
 
 async function pullFromServer(){
