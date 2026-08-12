@@ -3124,7 +3124,7 @@ function renderOilGauge(logs){
   svg+='<text x="'+(W/2)+'" y="'+(ty+th+38)+'" fill="rgba(255,255,255,0.35)" font-size="9" text-anchor="middle">'+Math.round(pct*100)+'% capacity · last reading '+new Date(validLogs[validLogs.length-1].timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'})+'</text>';
 
   svg+='</svg>';
-  existing.innerHTML=svg;
+  existing.innerHTML='<div style="display:flex;justify-content:flex-end;margin-bottom:2px;"><button onclick="shareLiveOilImage()" style="background:var(--amber);border:none;color:#1a1200;border-radius:8px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;">📤 Share Oil Level</button></div>'+svg;
 }
 
 // ════════════ PHOTO CAPTURE ════════════
@@ -4459,7 +4459,7 @@ async function shareLiveGraphImage(){
   var lastOilLog = db.hourlyLogs.filter(function(l){ return l.heatId===heat.id&&l.oilLevel>0; })
     .sort(function(a,b){ return new Date(a.timestamp)-new Date(b.timestamp); }).pop();
   var oilLevel = lastOilLog ? lastOilLog.oilLevel : null;
-  var hasOil = oilLevel !== null;
+  var hasOil = false; // Kept as a separate share image for now — see shareLiveOilImage()
 
   // ── Layout ──────────────────────────────────────────────────────────────────
   var W = 600;
@@ -4675,6 +4675,108 @@ async function shareLiveGraphImage(){
       ctx.fillText('Last reading: '+new Date(lastOilLog.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}),valX,midY+50);
     }
   }
+
+  // ── FOOTER ───────────────────────────────────────────────────────────────────
+  var FY=H-14;
+  ctx.fillStyle='rgba(255,255,255,0.15)'; ctx.font='9px Arial'; ctx.textAlign='left';
+  ctx.fillText('GeT Energy (Pty) Ltd  ·  Atlantis Industrial  ·  Cape Town',18,FY);
+  ctx.fillStyle='rgba(245,158,11,0.4)'; ctx.textAlign='right';
+  ctx.fillText('pyro-production.wynanddp.workers.dev',W-18,FY);
+  ctx.textAlign='left';
+
+  shareCanvasDirect(canvas);
+}
+
+async function shareLiveOilImage(){
+  var db = getDB();
+  var heat = db.heats.filter(function(h){ return h.reactor===currentReactor&&h.status!=='complete'; })[0]
+    || db.heats.filter(function(h){ return h.reactor===currentReactor; }).sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); })[0];
+  if(!heat){ alert('No active heat'); return; }
+
+  var lastOilLog = db.hourlyLogs.filter(function(l){ return l.heatId===heat.id&&l.oilLevel>0; })
+    .sort(function(a,b){ return new Date(a.timestamp)-new Date(b.timestamp); }).pop();
+  if(!lastOilLog){ alert('No oil level readings yet'); return; }
+  var oilLevel = lastOilLog.oilLevel;
+
+  var W = 420, HEADER = 80, OIL_H = 220, FOOTER = 32;
+  var H = HEADER + OIL_H + FOOTER;
+
+  var canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext('2d');
+
+  // ── Background ───────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#0A0D14'; ctx.fillRect(0,0,W,H);
+  var acc = ctx.createLinearGradient(0,0,W,0);
+  acc.addColorStop(0,'#F59E0B'); acc.addColorStop(1,'#EA580C');
+  ctx.fillStyle = acc; ctx.fillRect(0,0,W,4);
+
+  // ── HEADER ───────────────────────────────────────────────────────────────────
+  var now = new Date();
+  ctx.fillStyle='#F59E0B'; ctx.font='bold 15px Arial';
+  ctx.fillText('GeT Energy  —  Oil Level Update', 18, 26);
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='12px Arial';
+  ctx.fillText('R'+heat.reactor+'  ·  Heat #'+heat.heatNumber+'  ·  '+heat.material, 18, 46);
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='11px Arial';
+  ctx.fillText('Reading time: '+new Date(lastOilLog.timestamp).toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}), 18, 62);
+
+  ctx.textAlign='right';
+  ctx.fillStyle='rgba(255,255,255,0.85)'; ctx.font='bold 13px Arial';
+  ctx.fillText(now.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}), W-18, 36);
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='11px Arial';
+  ctx.fillText(now.toLocaleDateString('en-ZA',{day:'numeric',month:'short',year:'numeric'}), W-18, 52);
+  ctx.textAlign='left';
+
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(0,HEADER-4); ctx.lineTo(W,HEADER-4); ctx.stroke();
+
+  // ── OIL PANEL ────────────────────────────────────────────────────────────────
+  var OY = HEADER;
+  ctx.fillStyle='rgba(255,255,255,0.03)'; ctx.beginPath(); ctx.roundRect(12,OY+4,W-24,OIL_H-8,10); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.07)'; ctx.lineWidth=1; ctx.beginPath(); ctx.roundRect(12,OY+4,W-24,OIL_H-8,10); ctx.stroke();
+
+  ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.font='bold 11px Arial';
+  ctx.fillText('OIL LEVEL IN CONDENSER', 30, OY+24);
+
+  var maxOil=10000, pct=Math.min(oilLevel/maxOil,1);
+  var oilCol=pct<0.3?'#EA580C':pct<0.6?'#F59E0B':'#22C55E';
+
+  // ── Tube (left side) ──────────────────────────────────────────────────────
+  var TX=48, TY=OY+34, TW=40, TH=OIL_H-56, TR=8;
+  ctx.fillStyle='rgba(255,255,255,0.05)'; ctx.beginPath(); ctx.roundRect(TX,TY,TW,TH,TR); ctx.fill();
+  ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.roundRect(TX,TY,TW,TH,TR); ctx.stroke();
+
+  var fillH=Math.round(TH*pct);
+  if(fillH>2){
+    ctx.save(); ctx.beginPath(); ctx.roundRect(TX,TY,TW,TH,TR); ctx.clip();
+    var oilGrad=ctx.createLinearGradient(0,TY,0,TY+TH);
+    oilGrad.addColorStop(0,oilCol); oilGrad.addColorStop(1,oilCol+'66');
+    ctx.fillStyle=oilGrad; ctx.fillRect(TX,TY+TH-fillH,TW,fillH);
+    ctx.fillStyle='rgba(255,255,255,0.2)'; ctx.fillRect(TX+6,TY+TH-fillH+4,8,Math.min(fillH-10,TH-10));
+    ctx.restore();
+    ctx.strokeStyle=oilCol+'cc'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(TX,TY+TH-fillH); ctx.lineTo(TX+TW,TY+TH-fillH); ctx.stroke();
+  }
+
+  // Scale markers
+  [0,2000,4000,6000,8000,10000].forEach(function(v){
+    var f=v/maxOil, my=TY+TH-TH*f;
+    ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(TX+TW+3,my); ctx.lineTo(TX+TW+9,my); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.font='9px Arial'; ctx.textAlign='left';
+    ctx.fillText(v===0?'0':v/1000+'k',TX+TW+12,my+4);
+  });
+
+  // ── Value (right side, vertically centred in panel) ───────────────────────
+  var valX = TX+TW+65;
+  var midY = OY+OIL_H/2;
+  var oilStr = Number(oilLevel).toLocaleString()+' L';
+  ctx.fillStyle=oilCol; ctx.font='bold 46px Arial'; ctx.textAlign='left';
+  ctx.shadowColor='rgba(0,0,0,0.6)'; ctx.shadowBlur=8;
+  ctx.fillText(oilStr,valX,midY+10);
+  ctx.shadowBlur=0;
+  ctx.fillStyle='rgba(255,255,255,0.6)'; ctx.font='bold 12px Arial';
+  ctx.fillText(Math.round(pct*100)+'% of condenser capacity',valX,midY+32);
 
   // ── FOOTER ───────────────────────────────────────────────────────────────────
   var FY=H-14;
