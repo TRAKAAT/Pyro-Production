@@ -2865,12 +2865,39 @@ function showSyncStatus(msg, color){
 
 async function syncToServer(){
   const url=getServerUrl(); if(!url) return;
-  const db=getDB();
-  const settings=getSettings();
   try{
+    // Pull the latest server state first and merge it into our local copy.
+    // Without this, a phone with a stale local heat (e.g. it hasn't pulled
+    // since another phone advanced the phase) would push that stale copy
+    // and silently overwrite the newer phase status on the server.
+    let base = getDB();
+    try {
+      const res = await fetch(url+'/pull');
+      if(res.ok){
+        const remote = await res.json();
+        const mergeById=(localArr,remoteArr)=>{
+          const map={};
+          // Remote wins on id collisions — it reflects whatever every other
+          // device has already confirmed to the server.
+          [...(localArr||[]),...(remoteArr||[])].forEach(item=>{ if(item?.id) map[item.id]=item; });
+          return Object.values(map);
+        };
+        base = {
+          heats: mergeById(base.heats, remote.heats),
+          shifts: mergeById(base.shifts, remote.shifts),
+          hourlyLogs: base.hourlyLogs,
+          checklists: mergeById(base.checklists, remote.checklists),
+        };
+        // Persist the merged copy locally WITHOUT going through the
+        // wrapped saveDB (that would re-queue another debounced sync and
+        // loop). Use the original unwrapped saveDB.
+        _origSaveDB(base);
+      }
+    } catch(e){ /* pull failed — fall back to pushing local data as-is */ }
+    const settings=getSettings();
     await fetch(url+'/sync',{
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({ heats:db.heats, shifts:db.shifts, hourlyLogs:db.hourlyLogs, checklists:db.checklists, settings })
+      body:JSON.stringify({ heats:base.heats, shifts:base.shifts, hourlyLogs:base.hourlyLogs, checklists:base.checklists, settings })
     });
     showSyncStatus('✅ Synced','var(--green)');
   }catch(e){ showSyncStatus('⚠ Sync failed','var(--amber)'); }
