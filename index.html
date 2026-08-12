@@ -1599,6 +1599,7 @@ function confirmAdvancePhase(){
 
   db.heats = db.heats.map(h=>h.id===heat.id?heat:h);
   saveDB(db);
+  syncToServer();
   closeModal('modal-advance-phase');
 
   if(nextPhase==='deslag'){ openEndRunModal(); return; }
@@ -2096,6 +2097,7 @@ function submitEndRun(){
   heat.status='complete';
   db.heats=db.heats.map(h=>h.id===heat.id?heat:h);
   saveDB(db);
+  syncToServer();
   closeModal('modal-end-run');
   renderReactorDetail(currentReactor);
 }
@@ -2274,6 +2276,7 @@ function editSaveNewLog(){
   var log={id:genId(),heatId:editHeatId,reactor:heat.reactor,heatNumber:heat.heatNumber,timestamp:new Date(timeVal).toISOString(),temp:parseInt(tempVal),oilLevel:parseFloat(document.getElementById('edit-log-oil').value)||null,oilFlowing:null,condenser:null,notes:document.getElementById('edit-log-notes').value,photos:[],_manualEntry:true};
   db.hourlyLogs.push(log);
   saveDB(db);
+  syncToServer();
   document.getElementById('edit-add-log-form').style.display='none';
   renderEditHourlyLogs(editHeatId);
 }
@@ -2365,6 +2368,7 @@ function startShift(){
   _shiftCrew.forEach(function(c){ if(!s.supervisors.includes(c.name)){ s.supervisors.push(c.name); } });
   localStorage.setItem('py_settings',JSON.stringify(s));
   saveDB(db);
+  syncToServer();
   closeModal('modal-start-shift');
   renderHome();
 }
@@ -2379,6 +2383,7 @@ function endShift(){
   shift.handover=document.getElementById('end-handover').value;
   db.shifts=db.shifts.map(s=>s.id===shift.id?shift:s);
   saveDB(db);
+  syncToServer();
   closeModal('modal-end-shift');
   renderHome();
 }
@@ -2466,6 +2471,7 @@ function toggleCheckItem(r,itemId){
   cl.items[itemId]=!cl.items[itemId];
   db.checklists=db.checklists.map(c=>c.heatId===heat.id?cl:c);
   saveDB(db);
+  syncToServer();
   renderChecklistBody(r);
 }
 
@@ -2480,6 +2486,7 @@ function signOffChecklist(r){
   cl.complete=true; cl.signedBy=name; cl.signedAt=new Date().toISOString();
   db.checklists=db.checklists.map(c=>c.heatId===heat.id?cl:c);
   saveDB(db);
+  syncToServer();
   renderChecklistBody(r);
 }
 
