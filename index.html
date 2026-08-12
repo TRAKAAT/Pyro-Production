@@ -1406,6 +1406,7 @@ function revertLastPhase(heatId){
   delete heat.phases[curPhase];
   if(heat.phases[prevPhase]) heat.phases[prevPhase].endTime=null;
   heat.status=prevPhase;
+  heat.updatedAt=new Date().toISOString();
   db.heats=db.heats.map(function(h){return h.id===heat.id?heat:h;});
   saveDB(db); syncToServer(); renderReactorDetail(currentReactor);
 }
@@ -1623,6 +1624,7 @@ function confirmAdvancePhase(){
   } else {
     heat.status = 'complete';
   }
+  heat.updatedAt = new Date().toISOString();
 
   db.heats = db.heats.map(h=>h.id===heat.id?heat:h);
   saveDB(db);
@@ -1781,6 +1783,7 @@ function reopenHeat(heatId){
     heat.status = lastStarted;
   }
   heat.yields = null; // clear premature yields
+  heat.updatedAt = new Date().toISOString();
   db.heats=db.heats.map(function(h){return h.id===heat.id?heat:h;});
   saveDB(db); syncToServer(); renderReactorDetail(currentReactor);
 }
@@ -1945,6 +1948,7 @@ function startNewHeat(){
     phases:{ loading:{ startTime:now, endTime:null } },
     yields:null, notes:'',
     createdAt: now,
+    updatedAt: now,
   };
   db.heats.push(heat);
   saveDB(db);
@@ -2126,6 +2130,7 @@ function submitEndRun(){
     heat.phases.deslag.endTime=new Date().toISOString();
   }
   heat.status='complete';
+  heat.updatedAt=new Date().toISOString();
   db.heats=db.heats.map(h=>h.id===heat.id?heat:h);
   saveDB(db);
   syncToServer();
@@ -2183,6 +2188,7 @@ function saveEditHeat(){
     }
   }
   db.heats=db.heats.map(function(h){return h.id===heat.id?heat:h;});
+  heat.updatedAt=new Date().toISOString();
   saveDB(db); syncToServer(); closeModal('modal-edit-heat'); renderReactorDetail(currentReactor);
 }
 
@@ -2412,6 +2418,7 @@ function endShift(){
   shift.oilUsed=parseFloat(document.getElementById('end-oil-used').value)||0;
   shift.issues=document.getElementById('end-issues').value;
   shift.handover=document.getElementById('end-handover').value;
+  shift.updatedAt=new Date().toISOString();
   db.shifts=db.shifts.map(s=>s.id===shift.id?shift:s);
   saveDB(db);
   syncToServer();
@@ -2906,18 +2913,11 @@ async function syncToServer(){
       const res = await fetch(url+'/pull');
       if(res.ok){
         const remote = await res.json();
-        const mergeById=(localArr,remoteArr)=>{
-          const map={};
-          // Remote wins on id collisions — it reflects whatever every other
-          // device has already confirmed to the server.
-          [...(localArr||[]),...(remoteArr||[])].forEach(item=>{ if(item?.id) map[item.id]=item; });
-          return Object.values(map);
-        };
         base = {
-          heats: mergeById(base.heats, remote.heats),
-          shifts: mergeById(base.shifts, remote.shifts),
+          heats: mergeByRecency(base.heats, remote.heats),
+          shifts: mergeByRecency(base.shifts, remote.shifts),
           hourlyLogs: base.hourlyLogs,
-          checklists: mergeById(base.checklists, remote.checklists),
+          checklists: mergeByRecency(base.checklists, remote.checklists),
         };
         // Persist the merged copy locally WITHOUT going through the
         // wrapped saveDB (that would re-queue another debounced sync and
@@ -3007,6 +3007,23 @@ function copyDiagnosticOutput(){
   }
 }
 
+// Merge two arrays of records by id, keeping whichever version of each
+// record was actually modified more recently (by updatedAt, falling back
+// to createdAt for older records that predate the updatedAt field).
+// This is the one place conflict resolution happens — neither "local
+// always wins" nor "remote always wins" is safe, since either one can be
+// the stale copy depending on which device last touched a given record.
+function mergeByRecency(arr1, arr2){
+  const map={};
+  function stampOf(item){ return new Date(item.updatedAt||item.createdAt||0).getTime(); }
+  [...(arr1||[]),...(arr2||[])].forEach(item=>{
+    if(!item?.id) return;
+    const existing = map[item.id];
+    if(!existing || stampOf(item) >= stampOf(existing)) map[item.id]=item;
+  });
+  return Object.values(map);
+}
+
 async function pullFromServer(){
   const url=getServerUrl(); if(!url) return;
   try{
@@ -3017,18 +3034,12 @@ async function pullFromServer(){
 
     // Server is source of truth for hourly logs — remote replaces local
     // (edits and deletes on server must propagate back)
-    // For heats/shifts: merge so local unsaved drafts aren't lost
-    const mergeById=(arr1,arr2)=>{
-      const map={};
-      [...(arr1||[]),...(arr2||[])].forEach(item=>{ if(item?.id) map[item.id]=item; });
-      return Object.values(map);
-    };
-
+    // For heats/shifts/checklists: merge by whichever side is actually newer
     const merged={
-      heats: mergeById(local.heats, remote.heats),
-      shifts: mergeById(local.shifts, remote.shifts),
+      heats: mergeByRecency(local.heats, remote.heats),
+      shifts: mergeByRecency(local.shifts, remote.shifts),
       hourlyLogs: remote.hourlyLogs||[],  // server is authoritative — edits/deletes propagate
-      checklists: mergeById(local.checklists, remote.checklists),
+      checklists: mergeByRecency(local.checklists, remote.checklists),
     };
     saveDB(merged);
 
