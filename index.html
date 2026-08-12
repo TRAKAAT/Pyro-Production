@@ -2972,9 +2972,7 @@ async function showActiveHeatsDiagnostic(){
           html += '    '+p+': start='+(h.phases[p].startTime||'—')+' end='+(h.phases[p].endTime||'—')+'\n';
         }
       });
-      if(active.length>1){
-        html += '  <button style="margin-top:6px;background:var(--red);border:none;color:#fff;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;" onclick="deleteHeatDiagnostic(\''+h.id+'\',\''+r+'\')">🗑 Delete this record</button>\n';
-      }
+      html += '  <button style="margin-top:6px;background:var(--red);border:none;color:#fff;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;" onclick="deleteHeatDiagnostic(\''+h.id+'\',\''+r+'\')">🗑 Delete this record</button>\n';
     });
     html += '\n';
   });
