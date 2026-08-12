@@ -1048,14 +1048,24 @@ function getActiveShift(){
 }
 function getActiveHeat(reactor){
   const db = getDB();
-  // If duplicate "active" records ever exist for a reactor (e.g. from a
-  // sync hiccup that left an old heat stuck as incomplete), always prefer
-  // the most recently created one rather than whichever happens to be
-  // first in the array — otherwise a phone can get stuck showing a
-  // stale/orphaned heat indefinitely.
+  // If duplicate "active" records ever exist for a reactor (e.g. two heats
+  // accidentally started before one was marked complete), prefer whichever
+  // one has progressed furthest through the phase sequence — that's far
+  // more reliable than creation time, since a duplicate started later can
+  // easily be the LESS-progressed, throwaway one.
   const candidates = db.heats.filter(h=>h.reactor===reactor && h.status!=='complete');
   if(!candidates.length) return null;
-  candidates.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  if(candidates.length===1) return candidates[0];
+  function progressIndex(h){
+    let idx = -1;
+    PHASES.forEach(function(p,i){ if(h.phases && h.phases[p] && h.phases[p].startTime) idx = i; });
+    return idx;
+  }
+  candidates.sort(function(a,b){
+    const diff = progressIndex(b)-progressIndex(a);
+    if(diff!==0) return diff;
+    return new Date(b.createdAt)-new Date(a.createdAt);
+  });
   return candidates[0];
 }
 
@@ -2928,7 +2938,7 @@ async function showActiveHeatsDiagnostic(){
   const out = document.getElementById('diagnostic-output');
   const copyBtn = document.getElementById('diagnostic-copy-btn');
   out.style.display='';
-  out.textContent = 'Pulling latest from server...';
+  out.innerHTML = 'Pulling latest from server...';
   const url = getServerUrl();
   let heats = [];
   try {
@@ -2944,35 +2954,54 @@ async function showActiveHeatsDiagnostic(){
     out.textContent = 'Pull failed: '+e.message+'. Showing local data instead.\n\n';
     heats = getDB().heats;
   }
-  let text = '';
+  let html = '';
   [1,2].forEach(function(r){
     const active = heats.filter(function(h){ return h.reactor===r && h.status!=='complete'; })
       .sort(function(a,b){ return new Date(b.createdAt)-new Date(a.createdAt); });
-    text += '── REACTOR '+r+' — '+active.length+' active heat record(s) ──\n';
-    if(!active.length) text += '  (none — reactor is idle)\n';
+    html += '── REACTOR '+r+' — '+active.length+' active heat record(s) ──\n';
+    if(!active.length) html += '  (none — reactor is idle)\n';
     active.forEach(function(h,i){
-      text += '\n  ['+(i===0?'MOST RECENT — this is what the app shows':'OLDER / ORPHANED')+']\n';
-      text += '  id: '+h.id+'\n';
-      text += '  heatNumber: '+h.heatNumber+'\n';
-      text += '  status: '+h.status+'\n';
-      text += '  createdAt: '+h.createdAt+'\n';
-      text += '  phases:\n';
+      html += '\n  '+(active.length>1?'['+(i===0?'A':'B')+'] ':'');
+      html += 'id: '+h.id+'\n';
+      html += '  heatNumber: '+h.heatNumber+'\n';
+      html += '  status: '+h.status+'\n';
+      html += '  createdAt: '+h.createdAt+'\n';
+      html += '  phases:\n';
       PHASES.forEach(function(p){
         if(h.phases && h.phases[p]){
-          text += '    '+p+': start='+(h.phases[p].startTime||'—')+' end='+(h.phases[p].endTime||'—')+'\n';
+          html += '    '+p+': start='+(h.phases[p].startTime||'—')+' end='+(h.phases[p].endTime||'—')+'\n';
         }
       });
+      if(active.length>1){
+        html += '  <button style="margin-top:6px;background:var(--red);border:none;color:#fff;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;" onclick="deleteHeatDiagnostic(\''+h.id+'\',\''+r+'\')">🗑 Delete this record</button>\n';
+      }
     });
-    text += '\n';
+    html += '\n';
   });
-  out.textContent += text;
+  out.innerHTML += html;
   copyBtn.style.display='';
+}
+
+async function deleteHeatDiagnostic(id, reactor){
+  if(!confirm('Permanently delete heat record '+id+'?\n\nOnly do this for a confirmed duplicate/ghost record — this cannot be undone.')) return;
+  const url = getServerUrl();
+  try {
+    if(url) await fetch(url+'/heats/'+id, {method:'DELETE'});
+    const db = getDB();
+    db.heats = db.heats.filter(function(h){ return h.id!==id; });
+    saveDB(db);
+    alert('Deleted. Refreshing diagnostic view...');
+    showActiveHeatsDiagnostic();
+    renderHome();
+  } catch(e){
+    alert('Delete failed: '+e.message);
+  }
 }
 
 function copyDiagnosticOutput(){
   const out = document.getElementById('diagnostic-output');
   if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(out.textContent).then(function(){ alert('Copied — paste it in the chat.'); }).catch(function(){ alert('Copy failed — please select and copy the text manually.'); });
+    navigator.clipboard.writeText(out.innerText).then(function(){ alert('Copied — paste it in the chat.'); }).catch(function(){ alert('Copy failed — please select and copy the text manually.'); });
   } else {
     alert('Copy not supported on this browser — please select and copy the text manually.');
   }
