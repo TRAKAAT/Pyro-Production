@@ -1039,7 +1039,15 @@ function getActiveShift(){
 }
 function getActiveHeat(reactor){
   const db = getDB();
-  return db.heats.find(h=>h.reactor===reactor && h.status!=='complete') || null;
+  // If duplicate "active" records ever exist for a reactor (e.g. from a
+  // sync hiccup that left an old heat stuck as incomplete), always prefer
+  // the most recently created one rather than whichever happens to be
+  // first in the array — otherwise a phone can get stuck showing a
+  // stale/orphaned heat indefinitely.
+  const candidates = db.heats.filter(h=>h.reactor===reactor && h.status!=='complete');
+  if(!candidates.length) return null;
+  candidates.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  return candidates[0];
 }
 
 // ── PHASE HELPERS ──
@@ -1891,6 +1899,10 @@ function openNewHeatModal(r){
 function startNewHeat(){
   const num = document.getElementById('heat-number-input').value.trim();
   if(!num){ alert('Please enter a heat number'); return; }
+  if(getActiveHeat(currentReactor)){
+    alert('Reactor '+currentReactor+' already has an active heat in progress. Complete or check that one before starting a new one.');
+    return;
+  }
   // Get selected materials (no weights yet — captured at end of loading)
   var feedList = document.getElementById('new-heat-feeds-list');
   var feedMaterials = feedList ? Array.from(feedList.children).map(function(row){
