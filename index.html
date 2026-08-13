@@ -2913,11 +2913,13 @@ async function syncToServer(){
       const res = await fetch(url+'/pull');
       if(res.ok){
         const remote = await res.json();
+        const deletedIds = new Set(remote.deletedIds||[]);
+        const stripDeleted = arr => (arr||[]).filter(item=>!deletedIds.has(item?.id));
         base = {
-          heats: mergeByRecency(base.heats, remote.heats),
-          shifts: mergeByRecency(base.shifts, remote.shifts),
+          heats: stripDeleted(mergeByRecency(base.heats, remote.heats)),
+          shifts: stripDeleted(mergeByRecency(base.shifts, remote.shifts)),
           hourlyLogs: base.hourlyLogs,
-          checklists: mergeByRecency(base.checklists, remote.checklists),
+          checklists: stripDeleted(mergeByRecency(base.checklists, remote.checklists)),
         };
         // Persist the merged copy locally WITHOUT going through the
         // wrapped saveDB (that would re-queue another debounced sync and
@@ -3032,12 +3034,17 @@ async function pullFromServer(){
 
     // Server is source of truth for hourly logs — remote replaces local
     // (edits and deletes on server must propagate back)
-    // For heats/shifts/checklists: merge by whichever side is actually newer
+    // For heats/shifts/checklists: merge by whichever side is actually newer,
+    // then strip anything that's been deliberately deleted elsewhere — this
+    // is what stops a ghost/duplicate record from resurrecting after being
+    // removed on another device.
+    const deletedIds = new Set(remote.deletedIds||[]);
+    const stripDeleted = arr => (arr||[]).filter(item=>!deletedIds.has(item?.id));
     const merged={
-      heats: mergeByRecency(local.heats, remote.heats),
-      shifts: mergeByRecency(local.shifts, remote.shifts),
+      heats: stripDeleted(mergeByRecency(local.heats, remote.heats)),
+      shifts: stripDeleted(mergeByRecency(local.shifts, remote.shifts)),
       hourlyLogs: remote.hourlyLogs||[],  // server is authoritative — edits/deletes propagate
-      checklists: mergeByRecency(local.checklists, remote.checklists),
+      checklists: stripDeleted(mergeByRecency(local.checklists, remote.checklists)),
     };
     saveDB(merged);
 
