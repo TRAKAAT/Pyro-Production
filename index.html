@@ -2677,7 +2677,17 @@ function renderTempCompareSection(heats, el){
     if(hLogs.length<2) return null;
     const t0 = new Date(hLogs[0].timestamp).getTime();
     const pts = hLogs.map(l=>({ hrs:(new Date(l.timestamp).getTime()-t0)/3600000, temp:l.temp }));
-    return { heat:h, pts:pts, color:COMPARE_COLORS[idx%COMPARE_COLORS.length] };
+    // Technical metrics for the analysis table
+    const peakTemp = Math.max(...pts.map(p=>p.temp));
+    const peakPt = pts.find(p=>p.temp===peakTemp);
+    const startTemp = pts[0].temp;
+    const heatRate = peakPt.hrs>0 ? (peakTemp-startTemp)/peakPt.hrs : 0;
+    const loggedDurHrs = pts[pts.length-1].hrs;
+    const reactionHrs = (h.phases&&h.phases.reaction&&h.phases.reaction.startTime&&h.phases.reaction.endTime)
+      ? phaseDurationMs(h.phases.reaction)/3600000 : null;
+    const totalRunHrs = PHASES.reduce((a,p)=>a+(h.phases[p]?phaseDurationMs(h.phases[p]):0),0)/3600000;
+    return { heat:h, pts:pts, color:COMPARE_COLORS[idx%COMPARE_COLORS.length],
+      peakTemp, timeToPeak:peakPt.hrs, startTemp, heatRate, loggedDurHrs, reactionHrs, totalRunHrs };
   }).filter(Boolean);
 
   if(!series.length){
@@ -2688,39 +2698,74 @@ function renderTempCompareSection(heats, el){
 
   const allTemps = series.flatMap(s=>s.pts.map(p=>p.temp));
   const allHrs = series.flatMap(s=>s.pts.map(p=>p.hrs));
-  const maxT=Math.max(...allTemps), minT=Math.min(...allTemps,0);
+  const rawMaxT=Math.max(...allTemps), rawMinT=Math.min(...allTemps,0);
+  const pad=Math.max(Math.round((rawMaxT-rawMinT)*0.08),15);
+  const maxT=rawMaxT+pad, minT=Math.max(0,rawMinT-pad*0.4);
   const range=Math.max(maxT-minT,1);
   const maxHrs=Math.max(...allHrs,0.1);
 
-  const LPAD=36, RPAD=10, TPAD=10, BPAD=22, GW=280, GH=140;
+  const LPAD=42, RPAD=14, TPAD=14, BPAD=26, GW=420, GH=220;
   const W=LPAD+GW+RPAD, H=TPAD+GH+BPAD;
 
   function px(hrs){ return LPAD+(hrs/maxHrs)*GW; }
   function py(t){ return TPAD+GH*(1-(t-minT)/range); }
 
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">`;
-  // Gridlines + Y labels
-  [0,0.5,1].forEach(f=>{
+  // Horizontal gridlines + Y labels (5 lines for real resolution)
+  [0,0.25,0.5,0.75,1].forEach(f=>{
     const y=TPAD+GH*f;
-    svg+=`<line x1="${LPAD}" x2="${W-RPAD}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
-    svg+=`<text x="${LPAD-5}" y="${y+3}" fill="rgba(255,255,255,0.35)" font-size="8" text-anchor="end">${Math.round(maxT-range*f)}°</text>`;
+    svg+=`<line x1="${LPAD}" x2="${W-RPAD}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>`;
+    svg+=`<text x="${LPAD-6}" y="${y+3}" fill="rgba(255,255,255,0.4)" font-size="9" text-anchor="end">${Math.round(maxT-range*f)}°</text>`;
   });
-  // X labels (hours)
-  [0,0.5,1].forEach(f=>{
-    const x=LPAD+GW*f;
-    svg+=`<text x="${x}" y="${H-6}" fill="rgba(255,255,255,0.35)" font-size="8" text-anchor="middle">${(maxHrs*f).toFixed(1)}h</text>`;
-  });
-  // Lines
+  // Vertical gridlines + X labels (hours)
+  const xSteps=5;
+  for(let i=0;i<=xSteps;i++){
+    const f=i/xSteps, x=LPAD+GW*f;
+    svg+=`<line x1="${x}" x2="${x}" y1="${TPAD}" y2="${TPAD+GH}" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>`;
+    svg+=`<text x="${x}" y="${H-8}" fill="rgba(255,255,255,0.4)" font-size="9" text-anchor="middle">${(maxHrs*f).toFixed(1)}h</text>`;
+  }
+  // Lines + actual data-point dots (so real readings are visible, not just an interpolated curve)
   series.forEach(s=>{
-    const pts=s.pts.map(p=>`${px(p.hrs)},${py(p.temp)}`).join(' ');
-    svg+=`<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const ptsStr=s.pts.map(p=>`${px(p.hrs)},${py(p.temp)}`).join(' ');
+    svg+=`<polyline points="${ptsStr}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    s.pts.forEach(p=>{
+      svg+=`<circle cx="${px(p.hrs)}" cy="${py(p.temp)}" r="2.5" fill="${s.color}" stroke="#0D0F14" stroke-width="1"/>`;
+    });
+    // Mark peak explicitly
+    svg+=`<circle cx="${px(s.timeToPeak)}" cy="${py(s.peakTemp)}" r="4.5" fill="none" stroke="${s.color}" stroke-width="1.5"/>`;
   });
   svg+=`</svg>`;
 
-  html += `<div style="background:var(--bg);border-radius:10px;padding:10px">${svg}</div>`;
-  html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">
+  html += `<div style="background:var(--bg);border-radius:10px;padding:10px 6px 4px">${svg}</div>`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 14px">
     ${series.map(s=>`<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--textDim)"><span style="width:10px;height:10px;border-radius:3px;background:${s.color};display:inline-block"></span>R${s.heat.reactor} #${s.heat.heatNumber} · ${fmtDateShort(s.heat.createdAt)}</div>`).join('')}
   </div>`;
+
+  // Technical comparison table — the actual analysis, not just the picture
+  html += `<div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:11px;min-width:480px">
+      <thead><tr style="border-bottom:1px solid var(--border)">
+        <th style="text-align:left;padding:6px 8px;color:var(--muted);font-weight:600">Run</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">Peak Temp</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">Time to Peak</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">Heat-up Rate</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">Reaction Time</th>
+        <th style="text-align:right;padding:6px 8px;color:var(--muted);font-weight:600">Total Run</th>
+      </tr></thead>
+      <tbody>
+        ${series.map(s=>`
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
+            <td style="padding:7px 8px;color:var(--text)"><span style="width:8px;height:8px;border-radius:2px;background:${s.color};display:inline-block;margin-right:6px"></span>R${s.heat.reactor} #${s.heat.heatNumber}</td>
+            <td style="text-align:right;padding:7px 8px;color:var(--text);font-weight:700">${Math.round(s.peakTemp)}°C</td>
+            <td style="text-align:right;padding:7px 8px;color:var(--textDim)">${s.timeToPeak.toFixed(1)}h</td>
+            <td style="text-align:right;padding:7px 8px;color:var(--textDim)">${s.heatRate.toFixed(0)}°C/h</td>
+            <td style="text-align:right;padding:7px 8px;color:var(--textDim)">${s.reactionHrs!==null?s.reactionHrs.toFixed(1)+'h':'—'}</td>
+            <td style="text-align:right;padding:7px 8px;color:var(--textDim)">${s.totalRunHrs.toFixed(1)}h</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>`;
+
   html += `</div>`;
   el.innerHTML+=html;
 }
