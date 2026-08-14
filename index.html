@@ -1002,6 +1002,7 @@ let logOilFlowing = null;
 let logCondenser = null;
 let cbBagCount = 0;
 let statsFilter = 'all';
+let compareSelectedIds = [];
 let historyFilter = 'all';
 let clockInterval;
 let timerInterval;
@@ -1092,6 +1093,7 @@ function fmtDuration(ms){
 function fmtDurationHrs(ms){ return ms>0?(ms/3600000).toFixed(2):'0.00'; }
 function fmtTime(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}); }
 function fmtDateTime(iso){ if(!iso) return '—'; const d=new Date(iso); return d.toLocaleDateString('en-ZA',{day:'2-digit',month:'short'})+' '+d.toLocaleTimeString('en-ZA',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDateShort(iso){ if(!iso) return '—'; return new Date(iso).toLocaleDateString('en-ZA',{day:'2-digit',month:'short'}); }
 
 // ── PHASE COLOR ──
 function phaseColor(phase){
@@ -2630,29 +2632,107 @@ function renderStats(){
       </div>`;
   }
 
-  // Temperature trend SVG
-  if(logs.length>1){
-    const temps=logs.map(l=>l.temp).filter(t=>t>0);
-    const maxT=Math.max(...temps,500);
-    const minT=Math.min(...temps,50);
-    const W=300, H=100;
-    const pts=temps.map((t,i)=>{
-      const x=(i/(temps.length-1))*W;
-      const y=H-((t-minT)/(maxT-minT))*H;
-      return `${x},${y}`;
-    }).join(' ');
-    el.innerHTML+=`
-      <div class="chart-container">
-        <div class="chart-title">Temperature Trend (All Logs)</div>
-        <svg class="trend-svg" viewBox="0 0 ${W} ${H+20}" style="height:120px">
-          <defs><linearGradient id="tempGrad" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#EA580C" stop-opacity="0.5"/><stop offset="100%" stop-color="#EA580C" stop-opacity="0"/></linearGradient></defs>
-          <polygon points="${pts} ${W},${H} 0,${H}" fill="url(#tempGrad)"/>
-          <polyline points="${pts}" fill="none" stroke="#EA580C" stroke-width="2" stroke-linejoin="round"/>
-          <text x="0" y="${H+15}" fill="var(--muted)" font-size="10">${minT}°C</text>
-          <text x="${W-30}" y="${H+15}" fill="var(--muted)" font-size="10">${maxT}°C</text>
-        </svg>
-      </div>`;
+  // Temperature trend comparison — overlay multiple runs, normalized to
+  // "hours since first reading" so runs from different days/times line up
+  // meaningfully instead of being compared by wall-clock time.
+  renderTempCompareSection(heats, el);
+}
+
+const COMPARE_COLORS=['#EA580C','#3B82F6','#22C55E','#F59E0B','#A855F7','#EC4899'];
+const COMPARE_MAX=6;
+
+function renderTempCompareSection(heats, el){
+  const db=getDB();
+  // Prune any previously-selected heats that are no longer in the current filter
+  compareSelectedIds = compareSelectedIds.filter(id=>heats.find(h=>h.id===id));
+  // Default to the most recent 3 heats (within the current reactor filter) the first time
+  if(!compareSelectedIds.length && heats.length){
+    compareSelectedIds = [...heats].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,3).map(h=>h.id);
   }
+
+  const pickList=[...heats].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,20);
+
+  let html=`
+    <div class="chart-container">
+      <div class="chart-title">Compare Temperature Trends</div>
+      <div style="font-size:11px;color:var(--muted);margin:-6px 0 10px">Tap up to ${COMPARE_MAX} heats — each run is aligned by hours elapsed since its first reading, so shape and duration compare fairly regardless of when it ran.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+        ${pickList.map(h=>{
+          const on=compareSelectedIds.includes(h.id);
+          return `<button onclick="toggleCompareHeat('${h.id}')" style="font-size:11px;padding:6px 10px;border-radius:16px;border:1px solid ${on?'var(--amber)':'var(--border)'};background:${on?'var(--amber)':'var(--surface2)'};color:${on?'#1a1200':'var(--textDim)'};font-weight:${on?'700':'400'};cursor:pointer;white-space:nowrap;">R${h.reactor} #${h.heatNumber} · ${fmtDateShort(h.createdAt)}</button>`;
+        }).join('')}
+      </div>`;
+
+  const selectedHeats = compareSelectedIds.map(id=>heats.find(h=>h.id===id)).filter(Boolean);
+  if(!selectedHeats.length){
+    html += `<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Select at least one heat above to see its temperature trend</div></div>`;
+    el.innerHTML+=html;
+    return;
+  }
+
+  // Build normalized series per selected heat
+  const series = selectedHeats.map(function(h,idx){
+    const hLogs = db.hourlyLogs.filter(l=>l.heatId===h.id && l.temp>0 && !isNaN(new Date(l.timestamp).getTime()))
+      .sort((a,b)=>new Date(a.timestamp)-new Date(b.timestamp));
+    if(hLogs.length<2) return null;
+    const t0 = new Date(hLogs[0].timestamp).getTime();
+    const pts = hLogs.map(l=>({ hrs:(new Date(l.timestamp).getTime()-t0)/3600000, temp:l.temp }));
+    return { heat:h, pts:pts, color:COMPARE_COLORS[idx%COMPARE_COLORS.length] };
+  }).filter(Boolean);
+
+  if(!series.length){
+    html += `<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Selected heat(s) don't have enough logged readings to plot</div></div>`;
+    el.innerHTML+=html;
+    return;
+  }
+
+  const allTemps = series.flatMap(s=>s.pts.map(p=>p.temp));
+  const allHrs = series.flatMap(s=>s.pts.map(p=>p.hrs));
+  const maxT=Math.max(...allTemps), minT=Math.min(...allTemps,0);
+  const range=Math.max(maxT-minT,1);
+  const maxHrs=Math.max(...allHrs,0.1);
+
+  const LPAD=36, RPAD=10, TPAD=10, BPAD=22, GW=280, GH=140;
+  const W=LPAD+GW+RPAD, H=TPAD+GH+BPAD;
+
+  function px(hrs){ return LPAD+(hrs/maxHrs)*GW; }
+  function py(t){ return TPAD+GH*(1-(t-minT)/range); }
+
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">`;
+  // Gridlines + Y labels
+  [0,0.5,1].forEach(f=>{
+    const y=TPAD+GH*f;
+    svg+=`<line x1="${LPAD}" x2="${W-RPAD}" y1="${y}" y2="${y}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
+    svg+=`<text x="${LPAD-5}" y="${y+3}" fill="rgba(255,255,255,0.35)" font-size="8" text-anchor="end">${Math.round(maxT-range*f)}°</text>`;
+  });
+  // X labels (hours)
+  [0,0.5,1].forEach(f=>{
+    const x=LPAD+GW*f;
+    svg+=`<text x="${x}" y="${H-6}" fill="rgba(255,255,255,0.35)" font-size="8" text-anchor="middle">${(maxHrs*f).toFixed(1)}h</text>`;
+  });
+  // Lines
+  series.forEach(s=>{
+    const pts=s.pts.map(p=>`${px(p.hrs)},${py(p.temp)}`).join(' ');
+    svg+=`<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  });
+  svg+=`</svg>`;
+
+  html += `<div style="background:var(--bg);border-radius:10px;padding:10px">${svg}</div>`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">
+    ${series.map(s=>`<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--textDim)"><span style="width:10px;height:10px;border-radius:3px;background:${s.color};display:inline-block"></span>R${s.heat.reactor} #${s.heat.heatNumber} · ${fmtDateShort(s.heat.createdAt)}</div>`).join('')}
+  </div>`;
+  html += `</div>`;
+  el.innerHTML+=html;
+}
+
+function toggleCompareHeat(id){
+  const idx=compareSelectedIds.indexOf(id);
+  if(idx>=0){ compareSelectedIds.splice(idx,1); }
+  else {
+    if(compareSelectedIds.length>=COMPARE_MAX){ alert('You can compare up to '+COMPARE_MAX+' heats at once — deselect one first.'); return; }
+    compareSelectedIds.push(id);
+  }
+  renderStats();
 }
 
 // ═══════════════ HISTORY ═══════════════
@@ -3115,7 +3195,7 @@ function renderTempGraph(logs, opts){
   const card = cardId ? document.getElementById(cardId) : null;
   const container=document.getElementById(containerId);
   if(!container || (cardId && !card)) return;
-  const validLogs=logs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  const validLogs=logs.filter(function(l){return l.temp>0 && !isNaN(new Date(l.timestamp).getTime());}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(validLogs.length<2){
     if(card){ card.style.display='none'; } else { container.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);">Not enough temperature readings to plot yet</div>'; }
     return;
@@ -3137,15 +3217,28 @@ function renderTempGraph(logs, opts){
 
   // Layout — left pad for Y labels, bottom pad for time labels, top pad for dot labels
   const LPAD=38; const RPAD=12; const TPAD=36; const BPAD=28;
-  const POINT_SPACING=56;
-  const W=Math.max(validLogs.length*POINT_SPACING+LPAD+RPAD, 300);
   const GH=140; // graph area height
+
+  // X positions — proportional to actual elapsed time, so a 5-hour reaction
+  // and a 40-minute cooldown occupy space in proportion to their real
+  // duration, not just how many readings were logged during each.
+  const t0=times[0].getTime();
+  const tLast=times[times.length-1].getTime();
+  const tSpanMs=(isFinite(tLast-t0) && tLast>t0) ? (tLast-t0) : 60000;
+  const PX_PER_MIN=3.2;
+  const MIN_POINT_SPACING=42;
+  const MAX_W=16000; // hard cap — protects against an outlier timestamp blowing the width out to something unrenderable
+  const timeBasedW=(tSpanMs/60000)*PX_PER_MIN;
+  let W=Math.max(timeBasedW+LPAD+RPAD, validLogs.length*MIN_POINT_SPACING+LPAD+RPAD, 300);
+  if(!isFinite(W)) W=validLogs.length*MIN_POINT_SPACING+LPAD+RPAD; // extra safety net
+  W=Math.min(W, MAX_W);
   const TOTAL_H=TPAD+GH+BPAD;
 
-  // X positions — evenly spaced by index, NOT by real time
-  // This prevents compression when reaction has many hourly readings but cooldown has few
   const pts=temps.map(function(t,i){
-    var x=LPAD+i*(W-LPAD-RPAD)/(Math.max(temps.length-1,1));
+    var frac=(times[i].getTime()-t0)/tSpanMs;
+    if(!isFinite(frac)) frac=0;
+    frac=Math.max(0,Math.min(1,frac));
+    var x=LPAD+frac*(W-LPAD-RPAD);
     var y=TPAD+GH*(1-(t-minT)/range);
     return {x:x,y:y,t:t};
   });
@@ -3904,7 +3997,7 @@ async function sharePhasesCanvas(){
 }
 
 async function shareTempGraph(){
-  var logs = _hdLogs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  var logs = _hdLogs.filter(function(l){return l.temp>0 && !isNaN(new Date(l.timestamp).getTime());}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(!logs.length){ alert('No temperature data to share'); return; }
   var heat = _hdHeat;
 
@@ -3947,9 +4040,17 @@ async function shareTempGraph(){
   var minT=Math.max(0,rawMin-botPad);
   var range=Math.max(displayMax-minT,1);
 
-  // X positions — EVENLY SPACED by index (not real time)
-  // This avoids compression of clustered reaction readings vs lone cooldown reading
-  function px(i){ return LPAD + i*(GW/(Math.max(n-1,1))); }
+  // X positions — proportional to actual elapsed time, so the shared image
+  // is a true timeline, not just index-spaced dots.
+  var t0=times[0].getTime();
+  var tLast=times[n-1].getTime();
+  var tSpan=(isFinite(tLast-t0) && tLast>t0) ? (tLast-t0) : 60000;
+  function px(i){
+    var frac=(times[i].getTime()-t0)/tSpan;
+    if(!isFinite(frac)) frac=0;
+    frac=Math.max(0,Math.min(1,frac));
+    return LPAD + frac*GW;
+  }
   function py(t){ return TPAD + GH*(1-(t-minT)/range); }
 
   // Find which phase each log belongs to
