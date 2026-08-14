@@ -3115,7 +3115,7 @@ function renderTempGraph(logs, opts){
   const card = cardId ? document.getElementById(cardId) : null;
   const container=document.getElementById(containerId);
   if(!container || (cardId && !card)) return;
-  const validLogs=logs.filter(function(l){return l.temp>0 && !isNaN(new Date(l.timestamp).getTime());}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  const validLogs=logs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(validLogs.length<2){
     if(card){ card.style.display='none'; } else { container.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);">Not enough temperature readings to plot yet</div>'; }
     return;
@@ -3137,25 +3137,15 @@ function renderTempGraph(logs, opts){
 
   // Layout — left pad for Y labels, bottom pad for time labels, top pad for dot labels
   const LPAD=38; const RPAD=12; const TPAD=36; const BPAD=28;
+  const POINT_SPACING=56;
+  const W=Math.max(validLogs.length*POINT_SPACING+LPAD+RPAD, 300);
   const GH=140; // graph area height
-
-  // X positions — proportional to actual elapsed time, so the axis is a true
-  // timeline (a 5-hour reaction and a 40-minute cooldown take up space in
-  // proportion to their real duration, not just their point count).
-  const t0=times[0].getTime();
-  const tSpanMs=Math.max(times[times.length-1].getTime()-t0, 60000); // guard against zero span
-  const PX_PER_MIN=3.2; // pixels per minute of real elapsed time
-  const timeBasedW=(tSpanMs/60000)*PX_PER_MIN;
-  // Still enforce a minimum per-point spacing so closely-timed readings
-  // don't visually collide, and a sane minimum overall width.
-  const MIN_POINT_SPACING=42;
-  const MAX_W=16000; // hard cap so an outlier/garbled timestamp can never blow the SVG width out to something the browser refuses to render
-  const W=Math.min(Math.max(timeBasedW+LPAD+RPAD, validLogs.length*MIN_POINT_SPACING+LPAD+RPAD, 300), MAX_W);
   const TOTAL_H=TPAD+GH+BPAD;
 
+  // X positions — evenly spaced by index, NOT by real time
+  // This prevents compression when reaction has many hourly readings but cooldown has few
   const pts=temps.map(function(t,i){
-    var frac=(times[i].getTime()-t0)/tSpanMs;
-    var x=LPAD+frac*(W-LPAD-RPAD);
+    var x=LPAD+i*(W-LPAD-RPAD)/(Math.max(temps.length-1,1));
     var y=TPAD+GH*(1-(t-minT)/range);
     return {x:x,y:y,t:t};
   });
@@ -3914,7 +3904,7 @@ async function sharePhasesCanvas(){
 }
 
 async function shareTempGraph(){
-  var logs = _hdLogs.filter(function(l){return l.temp>0 && !isNaN(new Date(l.timestamp).getTime());}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  var logs = _hdLogs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(!logs.length){ alert('No temperature data to share'); return; }
   var heat = _hdHeat;
 
@@ -3957,11 +3947,9 @@ async function shareTempGraph(){
   var minT=Math.max(0,rawMin-botPad);
   var range=Math.max(displayMax-minT,1);
 
-  // X positions — proportional to actual elapsed time, so the shared image
-  // is a true timeline, not just index-spaced dots.
-  var t0=times[0].getTime();
-  var tSpan=Math.max(times[n-1].getTime()-t0, 60000);
-  function px(i){ return LPAD + ((times[i].getTime()-t0)/tSpan)*GW; }
+  // X positions — EVENLY SPACED by index (not real time)
+  // This avoids compression of clustered reaction readings vs lone cooldown reading
+  function px(i){ return LPAD + i*(GW/(Math.max(n-1,1))); }
   function py(t){ return TPAD + GH*(1-(t-minT)/range); }
 
   // Find which phase each log belongs to
