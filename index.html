@@ -3115,7 +3115,7 @@ function renderTempGraph(logs, opts){
   const card = cardId ? document.getElementById(cardId) : null;
   const container=document.getElementById(containerId);
   if(!container || (cardId && !card)) return;
-  const validLogs=logs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  const validLogs=logs.filter(function(l){return l.temp>0 && !isNaN(new Date(l.timestamp).getTime());}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(validLogs.length<2){
     if(card){ card.style.display='none'; } else { container.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);">Not enough temperature readings to plot yet</div>'; }
     return;
@@ -3149,7 +3149,8 @@ function renderTempGraph(logs, opts){
   // Still enforce a minimum per-point spacing so closely-timed readings
   // don't visually collide, and a sane minimum overall width.
   const MIN_POINT_SPACING=42;
-  const W=Math.max(timeBasedW+LPAD+RPAD, validLogs.length*MIN_POINT_SPACING+LPAD+RPAD, 300);
+  const MAX_W=16000; // hard cap so an outlier/garbled timestamp can never blow the SVG width out to something the browser refuses to render
+  const W=Math.min(Math.max(timeBasedW+LPAD+RPAD, validLogs.length*MIN_POINT_SPACING+LPAD+RPAD, 300), MAX_W);
   const TOTAL_H=TPAD+GH+BPAD;
 
   const pts=temps.map(function(t,i){
@@ -3913,7 +3914,7 @@ async function sharePhasesCanvas(){
 }
 
 async function shareTempGraph(){
-  var logs = _hdLogs.filter(function(l){return l.temp>0;}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
+  var logs = _hdLogs.filter(function(l){return l.temp>0 && !isNaN(new Date(l.timestamp).getTime());}).sort(function(a,b){return new Date(a.timestamp)-new Date(b.timestamp);});
   if(!logs.length){ alert('No temperature data to share'); return; }
   var heat = _hdHeat;
 
